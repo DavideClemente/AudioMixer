@@ -6,6 +6,7 @@ using AudioMixerWin.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 
 namespace AudioMixerWin.Core.ViewModels;
 
@@ -14,6 +15,7 @@ public partial class MainViewModel : ObservableObject
     private readonly AudioManager _audioManager;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly AppSettings _settings;
+    private readonly DispatcherTimer _refreshTimer;
     private SerialManager _serial;
 
     [ObservableProperty]
@@ -26,6 +28,8 @@ public partial class MainViewModel : ObservableObject
     private string serialStatus = "Not connected";
 
     public ObservableCollection<ChannelViewModel> Channels { get; } = new();
+
+    public ObservableCollection<AudioSession> AvailableSessions { get; } = new();
 
     public MainViewModel()
     {
@@ -40,6 +44,12 @@ public partial class MainViewModel : ObservableObject
             AddChannelInternal(config.AppName, config.KnobIndex, save: false);
 
         _serial = CreateAndStartSerial();
+
+        RefreshAvailableSessions();
+
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _refreshTimer.Tick += (_, _) => RefreshAvailableSessions();
+        _refreshTimer.Start();
     }
 
     private SerialManager CreateAndStartSerial()
@@ -77,7 +87,7 @@ public partial class MainViewModel : ObservableObject
     private void AddChannelInternal(string appName, int? knobIndex = null, bool save = true)
     {
         var index = knobIndex ?? (Channels.Count == 0 ? 0 : Channels.Max(c => c.KnobIndex) + 1);
-        Channels.Add(new ChannelViewModel(index, appName, _audioManager, RemoveChannelInternal, SaveChannels));
+        Channels.Add(new ChannelViewModel(index, appName, _audioManager, AvailableSessions, RemoveChannelInternal, SaveChannels));
 
         if (save)
             SaveChannels();
@@ -96,6 +106,23 @@ public partial class MainViewModel : ObservableObject
             .ToList();
 
         SettingsService.Save(_settings);
+    }
+
+    private void RefreshAvailableSessions()
+    {
+        var current = _audioManager.GetSessions();
+
+        for (var i = AvailableSessions.Count - 1; i >= 0; i--)
+        {
+            if (!current.Any(s => s.ProcessName.Equals(AvailableSessions[i].ProcessName, StringComparison.OrdinalIgnoreCase)))
+                AvailableSessions.RemoveAt(i);
+        }
+
+        foreach (var session in current)
+        {
+            if (!AvailableSessions.Any(s => s.ProcessName.Equals(session.ProcessName, StringComparison.OrdinalIgnoreCase)))
+                AvailableSessions.Add(session);
+        }
     }
 
     private void OnKnobChanged(int knobIndex, float normalized)

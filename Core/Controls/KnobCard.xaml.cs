@@ -31,7 +31,7 @@ public sealed partial class KnobCard : UserControl
 
         var listView = new ListView
         {
-            ItemsSource = Channel.GetAvailableSessions(),
+            ItemsSource = Channel.AvailableSessions,
             DisplayMemberPath = nameof(AudioSession.ProcessName),
             SelectionMode = ListViewSelectionMode.Single
         };
