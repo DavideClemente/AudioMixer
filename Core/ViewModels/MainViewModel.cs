@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using AudioMixerWin.Core.Models;
 using AudioMixerWin.Core.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -12,6 +13,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly AudioManager _audioManager;
     private readonly DispatcherQueue _dispatcherQueue;
+    private readonly AppSettings _settings;
     private SerialManager _serial;
 
     [ObservableProperty]
@@ -29,15 +31,13 @@ public partial class MainViewModel : ObservableObject
     {
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _audioManager = new AudioManager();
+        _settings = SettingsService.Load();
 
-        AddChannelInternal("Spotify");
-        AddChannelInternal("Discord");
-        AddChannelInternal("Chrome");
-        AddChannelInternal("Game");
+        comPort = _settings.ComPort;
+        baudRate = _settings.BaudRate;
 
-        var settings = SettingsService.Load();
-        comPort = settings.ComPort;
-        baudRate = settings.BaudRate;
+        foreach (var config in _settings.Channels)
+            AddChannelInternal(config.AppName, config.KnobIndex, save: false);
 
         _serial = CreateAndStartSerial();
     }
@@ -66,19 +66,37 @@ public partial class MainViewModel : ObservableObject
         _serial.Stop();
         _serial = CreateAndStartSerial();
 
-        SettingsService.Save(new AppSettings { ComPort = ComPort, BaudRate = BaudRate });
+        _settings.ComPort = ComPort;
+        _settings.BaudRate = BaudRate;
+        SettingsService.Save(_settings);
     }
 
     [RelayCommand]
     private void AddChannel() => AddChannelInternal("Select App");
 
-    private void AddChannelInternal(string appName)
+    private void AddChannelInternal(string appName, int? knobIndex = null, bool save = true)
     {
-        var knobIndex = Channels.Count == 0 ? 0 : Channels.Max(c => c.KnobIndex) + 1;
-        Channels.Add(new ChannelViewModel(knobIndex, appName, _audioManager, RemoveChannelInternal));
+        var index = knobIndex ?? (Channels.Count == 0 ? 0 : Channels.Max(c => c.KnobIndex) + 1);
+        Channels.Add(new ChannelViewModel(index, appName, _audioManager, RemoveChannelInternal, SaveChannels));
+
+        if (save)
+            SaveChannels();
     }
 
-    private void RemoveChannelInternal(ChannelViewModel channel) => Channels.Remove(channel);
+    private void RemoveChannelInternal(ChannelViewModel channel)
+    {
+        Channels.Remove(channel);
+        SaveChannels();
+    }
+
+    private void SaveChannels()
+    {
+        _settings.Channels = Channels
+            .Select(c => new ChannelConfig { KnobIndex = c.KnobIndex, AppName = c.AppName })
+            .ToList();
+
+        SettingsService.Save(_settings);
+    }
 
     private void OnKnobChanged(int knobIndex, float normalized)
     {
