@@ -33,6 +33,7 @@ public sealed partial class SettingsPage : Page
         }
     }
 
+    // x:Bind to ViewModel.UnhideProcessCommand from inside this DataTemplate crashes XamlCompiler, so invoke it via Tag/Click instead.
     private void OnShowClick(object sender, RoutedEventArgs e)
     {
         if (((Button)sender).Tag is not string processName)
