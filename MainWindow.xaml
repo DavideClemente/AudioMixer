@@ -13,20 +13,33 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <NavigationView
-        x:Name="NavView"
-        IsBackButtonVisible="Collapsed"
-        SelectionChanged="OnNavSelectionChanged">
+    <Grid>
+        <NavigationView
+            x:Name="NavView"
+            IsBackButtonVisible="Collapsed"
+            SelectionChanged="OnNavSelectionChanged">
 
-        <NavigationView.MenuItems>
-            <NavigationViewItem Content="Mixer" Tag="mixer" IsSelected="True">
-                <NavigationViewItem.Icon>
-                    <SymbolIcon Symbol="Volume" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-        </NavigationView.MenuItems>
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Mixer" Tag="mixer" IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Volume" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
-        <Frame x:Name="ContentFrame" />
+            <Frame x:Name="ContentFrame" />
 
-    </NavigationView>
+        </NavigationView>
+
+        <Border
+            x:Name="PaneSplitter"
+            Width="6"
+            HorizontalAlignment="Left"
+            Background="Transparent"
+            PointerEntered="OnSplitterPointerEntered"
+            PointerExited="OnSplitterPointerExited"
+            PointerPressed="OnSplitterPointerPressed"
+            PointerMoved="OnSplitterPointerMoved"
+            PointerReleased="OnSplitterPointerReleased" />
+    </Grid>
 </Window>

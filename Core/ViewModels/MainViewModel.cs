@@ -30,6 +30,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private double refreshIntervalSeconds;
 
+    [ObservableProperty]
+    private double navPaneWidth;
+
     public ObservableCollection<ChannelViewModel> Channels { get; } = new();
 
     public ObservableCollection<AudioSession> AvailableSessions { get; } = new();
@@ -45,6 +48,7 @@ public partial class MainViewModel : ObservableObject
         comPort = _settings.ComPort;
         baudRate = _settings.BaudRate;
         refreshIntervalSeconds = _settings.RefreshIntervalSeconds;
+        navPaneWidth = _settings.NavPaneWidth;
 
         foreach (var process in _settings.ExcludedProcesses)
             HiddenProcesses.Add(process);
@@ -172,6 +176,12 @@ public partial class MainViewModel : ObservableObject
     {
         _refreshTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, value));
         _settings.RefreshIntervalSeconds = (int)value;
+        SettingsService.Save(_settings);
+    }
+
+    partial void OnNavPaneWidthChanged(double value)
+    {
+        _settings.NavPaneWidth = value;
         SettingsService.Save(_settings);
     }
 
