@@ -28,5 +28,15 @@
 
         <TextBlock Text="{x:Bind ViewModel.SerialStatus, Mode=OneWay}" Opacity="0.7" Margin="0,8,0,0" />
 
+        <TextBlock Text="Audio Sessions" FontSize="20" FontWeight="SemiBold" Margin="0,24,0,8" />
+
+        <TextBlock Text="Refresh Interval (seconds)" />
+        <NumberBox
+            Value="{x:Bind ViewModel.RefreshIntervalSeconds, Mode=TwoWay}"
+            Minimum="1"
+            Maximum="30"
+            SpinButtonPlacementMode="Inline"
+            HorizontalAlignment="Stretch" />
+
     </StackPanel>
 </Page>

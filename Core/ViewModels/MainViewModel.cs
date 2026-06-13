@@ -27,6 +27,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string serialStatus = "Not connected";
 
+    [ObservableProperty]
+    private double refreshIntervalSeconds;
+
     public ObservableCollection<ChannelViewModel> Channels { get; } = new();
 
     public ObservableCollection<AudioSession> AvailableSessions { get; } = new();
@@ -39,6 +42,7 @@ public partial class MainViewModel : ObservableObject
 
         comPort = _settings.ComPort;
         baudRate = _settings.BaudRate;
+        refreshIntervalSeconds = _settings.RefreshIntervalSeconds;
 
         foreach (var config in _settings.Channels)
             AddChannelInternal(config.AppName, config.KnobIndex, save: false);
@@ -47,7 +51,7 @@ public partial class MainViewModel : ObservableObject
 
         RefreshAvailableSessions();
 
-        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(RefreshIntervalSeconds) };
         _refreshTimer.Tick += (_, _) => RefreshAvailableSessions();
         _refreshTimer.Start();
     }
@@ -134,6 +138,13 @@ public partial class MainViewModel : ObservableObject
             if (!AvailableSessions.Any(s => s.ProcessName.Equals(session.ProcessName, StringComparison.OrdinalIgnoreCase)))
                 AvailableSessions.Add(session);
         }
+    }
+
+    partial void OnRefreshIntervalSecondsChanged(double value)
+    {
+        _refreshTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, value));
+        _settings.RefreshIntervalSeconds = (int)value;
+        SettingsService.Save(_settings);
     }
 
     private void OnKnobChanged(int knobIndex, float normalized)
