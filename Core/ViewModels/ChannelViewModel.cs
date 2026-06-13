@@ -56,22 +56,28 @@ public partial class ChannelViewModel : ObservableObject
         volume = audioManager.GetVolume(appName) * 100;
 
         AvailableSessions.CollectionChanged += OnAvailableSessionsChanged;
-        UpdateIconSource();
+        IconSource = GetSessionIcon(appName);
     }
 
     partial void OnAppNameChanged(string value)
     {
         Volume = _audioManager.GetVolume(value) * 100;
-        UpdateIconSource();
+        IconSource = GetSessionIcon(value);
         _onSettingsChanged();
     }
 
-    private void OnAvailableSessionsChanged(object? sender, NotifyCollectionChangedEventArgs e) => UpdateIconSource();
-
-    private void UpdateIconSource()
+    private void OnAvailableSessionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        IconSource = AvailableSessions.FirstOrDefault(s => s.ProcessName.Equals(AppName, StringComparison.OrdinalIgnoreCase))?.IconSource;
+        var session = AvailableSessions.FirstOrDefault(s => s.ProcessName.Equals(AppName, StringComparison.OrdinalIgnoreCase));
+        if (session is null)
+            return; // app not running — keep last-known icon and volume
+
+        IconSource = session.IconSource;
+        Volume = _audioManager.GetVolume(AppName) * 100;
     }
+
+    private ImageSource? GetSessionIcon(string appName) =>
+        AvailableSessions.FirstOrDefault(s => s.ProcessName.Equals(appName, StringComparison.OrdinalIgnoreCase))?.IconSource;
 
     partial void OnVolumeChanged(double value) =>
         _audioManager.SetVolume(AppName, (float)(value / 100.0));
