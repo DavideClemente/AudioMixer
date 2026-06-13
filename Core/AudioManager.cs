@@ -14,6 +14,8 @@ namespace AudioMixerWin.Core;
 
 public class AudioManager
     {
+        public const string MasterVolumeProcessName = "System Volume";
+
         private readonly MMDevice _device;
         private readonly Dictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -26,6 +28,8 @@ public class AudioManager
         public List<AudioSession> GetSessions()
         {
             var result = new List<AudioSession>();
+
+            _device.AudioSessionManager.RefreshSessions();
             var sessions = _device.AudioSessionManager.Sessions;
 
             Console.WriteLine("Audio sessions detected:\n");
@@ -56,6 +60,13 @@ public class AudioManager
                     Console.WriteLine($"System session - Volume: {session.SimpleAudioVolume.Volume}");
                 }
             }
+
+            result.Add(new AudioSession
+            {
+                ProcessName = MasterVolumeProcessName,
+                DisplayName = MasterVolumeProcessName,
+                Volume = GetMasterVolume(),
+            });
 
             return result
                 .GroupBy(x => x!.ProcessName)
@@ -117,8 +128,16 @@ public class AudioManager
             }
         }
         
+        public float GetMasterVolume() => _device.AudioEndpointVolume.MasterVolumeLevelScalar;
+
+        public void SetMasterVolume(float volume) =>
+            _device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(volume, 0f, 1f);
+
         public float GetVolume(string processName)
         {
+            if (processName.Equals(MasterVolumeProcessName, StringComparison.OrdinalIgnoreCase))
+                return GetMasterVolume();
+
             var sessions = _device.AudioSessionManager.Sessions;
 
             for (var i = 0; i < sessions.Count; i++)
@@ -148,6 +167,12 @@ public class AudioManager
         
         public void SetVolume(string processName, float volume)
         {
+            if (processName.Equals(MasterVolumeProcessName, StringComparison.OrdinalIgnoreCase))
+            {
+                SetMasterVolume(volume);
+                return;
+            }
+
             var sessions = _device.AudioSessionManager.Sessions;
 
             for (var i = 0; i < sessions.Count; i++)

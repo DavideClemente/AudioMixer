@@ -52,4 +52,10 @@ public sealed partial class SettingsPage : Page
 
         ViewModel.UnhideProcessCommand.Execute(processName);
     }
+
+    private void OnComPortTextSubmitted(ComboBox sender, ComboBoxTextSubmittedEventArgs args)
+    {
+        ViewModel.ComPort = args.Text;
+        args.Handled = true;
+    }
 }
