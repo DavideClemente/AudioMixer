@@ -12,18 +12,22 @@
     SecondaryButtonText="Remove Channel"
     CloseButtonText="Cancel">
 
-    <ListView x:Name="SessionsList" ItemsSource="{x:Bind AvailableSessions}" SelectionMode="Single">
-        <ListView.ItemTemplate>
-            <DataTemplate x:DataType="models:AudioSession">
-                <Grid ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Bind ProcessName}" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Content="Hide" Tag="{x:Bind}" Click="OnHideClick" />
-                </Grid>
-            </DataTemplate>
-        </ListView.ItemTemplate>
-    </ListView>
+    <StackPanel Spacing="8">
+        <InfoBar x:Name="HideInfoBar" Severity="Warning" IsOpen="False" IsClosable="True" />
+
+        <ListView x:Name="SessionsList" ItemsSource="{x:Bind SelectableSessions}" SelectionMode="Single">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:AudioSession">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind ProcessName}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Hide" Tag="{x:Bind}" Click="OnHideClick" />
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </StackPanel>
 </ContentDialog>
