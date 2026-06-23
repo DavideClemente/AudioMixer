@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using WinRT.Interop;
 
 namespace AudioMixerWin
 {
@@ -26,6 +27,11 @@ namespace AudioMixerWin
         public MainWindow()
         {
             InitializeComponent();
+
+            var hwnd = WindowNative.GetWindowHandle(this);
+            var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(
+                Win32Interop.GetWindowIdFromWindow(hwnd));
+            appWindow.SetIcon("Assets\\AudioMixer.ico");
 
             _mainPage = new MainPage(ViewModel);
             _settingsPage = new SettingsPage(ViewModel);
