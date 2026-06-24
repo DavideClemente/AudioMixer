@@ -36,6 +36,19 @@ public class SerialManager
         catch { }
     }
 
+    public void SendAssignment(int knobIndex, string appName, byte[] iconRgb565)
+    {
+        if (!_port.IsOpen) return;
+        try
+        {
+            var knobId = $"knob{knobIndex + 1}";
+            _port.WriteLine($"assign:{knobId}:{appName}");
+            if (iconRgb565.Length > 0)
+                _port.WriteLine($"icon:{knobId}:{Convert.ToBase64String(iconRgb565)}");
+        }
+        catch { }
+    }
+
     private void OnData(object sender, SerialDataReceivedEventArgs e)
     {
         try
