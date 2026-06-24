@@ -11,6 +11,7 @@ public class SerialManager
 
     public event Action<string, float>? KnobChanged;
     public event Action<string, int>? KnobDelta;
+    public event Action<string>? KnobPressed;
 
     public SerialManager(string comPort, int baudRate)
     {
@@ -58,6 +59,8 @@ public class SerialManager
             KnobDelta?.Invoke(knobId, +1);
         else if (payload == "down")
             KnobDelta?.Invoke(knobId, -1);
+        else if (payload == "press")
+            KnobPressed?.Invoke(knobId);
         else if (float.TryParse(payload, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
             KnobChanged?.Invoke(knobId, Math.Clamp(value, 0f, 1f));
     }
