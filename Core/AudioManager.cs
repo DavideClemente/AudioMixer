@@ -29,6 +29,8 @@ public class AudioManager
         private readonly MMDevice _device;
         private readonly Dictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, byte[]> _iconRgb565Cache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, (byte R, byte G, byte B)> _iconColorCache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly (byte R, byte G, byte B) DefaultAccent = (0, 200, 255);
 
         public AudioManager()
         {
@@ -135,6 +137,91 @@ public class AudioManager
 
             _iconRgb565Cache[processName] = result;
             return result;
+        }
+
+        public (byte R, byte G, byte B) GetIconColor(string processName)
+        {
+            if (_iconColorCache.TryGetValue(processName, out var cached))
+                return cached;
+
+            var result = DefaultAccent;
+            try
+            {
+                if (TryGetIconArgb(processName, out var argb))
+                    result = ComputeDominantColor(argb);
+            }
+            catch { }
+
+            _iconColorCache[processName] = result;
+            return result;
+        }
+
+        // Returns the 64x64 icon as raw BGRA bytes (Format32bppArgb memory order: B,G,R,A).
+        private static bool TryGetIconArgb(string processName, out byte[] argb)
+        {
+            argb = Array.Empty<byte>();
+            var procs = Process.GetProcessesByName(processName);
+            if (procs.Length == 0) return false;
+
+            var path = procs[0].MainModule?.FileName;
+            if (path is null) return false;
+
+            using var icon = Icon.ExtractAssociatedIcon(path);
+            if (icon is null) return false;
+
+            const int size = 64;
+            using var bmp = new System.Drawing.Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                using var srcBmp = icon.ToBitmap();
+                g.DrawImage(srcBmp, 0, 0, size, size);
+            }
+
+            var data = bmp.LockBits(
+                new System.Drawing.Rectangle(0, 0, size, size),
+                System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            try
+            {
+                argb = new byte[data.Stride * size];
+                Marshal.Copy(data.Scan0, argb, 0, argb.Length);
+            }
+            finally { bmp.UnlockBits(data); }
+            return true;
+        }
+
+        // Coarse-histogram dominant color: skip transparent/near-gray/near-dark pixels,
+        // bucket the rest (3 bits/channel), return the average of the most populated bucket.
+        private static (byte R, byte G, byte B) ComputeDominantColor(byte[] argb)
+        {
+            var counts = new Dictionary<int, int>();
+            var sums = new Dictionary<int, (long R, long G, long B, int N)>();
+            int pixels = argb.Length / 4;
+
+            for (int i = 0; i < pixels; i++)
+            {
+                int o = i * 4;
+                byte b = argb[o], g = argb[o + 1], r = argb[o + 2], a = argb[o + 3];
+                if (a < 128) continue;
+
+                int max = Math.Max(r, Math.Max(g, b));
+                int min = Math.Min(r, Math.Min(g, b));
+                int sat = max == 0 ? 0 : (max - min) * 255 / max;
+                if (sat < 40 || max < 40) continue; // skip gray and very dark pixels
+
+                int key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+                counts.TryGetValue(key, out int c);
+                counts[key] = c + 1;
+                sums.TryGetValue(key, out var s);
+                sums[key] = (s.R + r, s.G + g, s.B + b, s.N + 1);
+            }
+
+            if (counts.Count == 0) return DefaultAccent;
+
+            int best = counts.OrderByDescending(kv => kv.Value).First().Key;
+            var bs = sums[best];
+            return ((byte)(bs.R / bs.N), (byte)(bs.G / bs.N), (byte)(bs.B / bs.N));
         }
 
         private static byte[] ConvertIconToRgb565(Icon icon)
