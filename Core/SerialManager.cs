@@ -36,6 +36,13 @@ public class SerialManager
         catch { }
     }
 
+    public void SendVolume(int knobIndex, float volume)
+    {
+        if (!_port.IsOpen) return;
+        try { _port.WriteLine($"vol:knob{knobIndex + 1}:{volume.ToString("F2", CultureInfo.InvariantCulture)}"); }
+        catch { }
+    }
+
     public void SendAssignment(int knobIndex, string appName, byte[] iconRgb565)
     {
         if (!_port.IsOpen) return;

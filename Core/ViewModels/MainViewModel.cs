@@ -167,6 +167,7 @@ public partial class MainViewModel : ObservableObject
     {
         var icon = _audioManager.GetIconRgb565(ch.AppName);
         _serial.SendAssignment(ch.KnobIndex, ch.AppName, icon);
+        _serial.SendVolume(ch.KnobIndex, _audioManager.GetVolume(ch.AppName));
     }
 
     private void SyncAllChannels()
@@ -315,7 +316,10 @@ public partial class MainViewModel : ObservableObject
                 ? $"{knobId} → {normalized:P0} (index={index}, app={channel.AppName})"
                 : $"{knobId} → {normalized:P0} [no channel at index {index}, channels={string.Join(",", Channels.Select(c => c.KnobIndex))}]");
             if (channel != null)
+            {
                 channel.Volume = normalized * 100;
+                _serial.SendVolume(index, (float)(channel.Volume / 100.0));
+            }
         });
     }
 

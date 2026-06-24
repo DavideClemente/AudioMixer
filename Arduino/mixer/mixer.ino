@@ -10,6 +10,20 @@ static bool isIdle = true;
 static char  inLine[12000];
 static int   inPos = 0;
 
+static void handleVolumeLine(const char* line) {
+  if (strncmp(line, "vol:", 4) != 0) return;
+  const char* rest = line + 4;                // "knob1:0.42"
+  if (strncmp(rest, "knob", 4) != 0) return;
+  const char* colon = strchr(rest, ':');
+  if (!colon) return;
+  int idx = atoi(rest + 4) - 1;
+  if (idx < 0 || idx >= MAX_KNOBS) return;
+  float v = atof(colon + 1);
+  displayShowKnob(idx, v);
+  lastKnobActivity = millis();
+  isIdle = false;
+}
+
 void readIncomingSerial() {
   while (Serial.available() > 0) {
     char c = (char)Serial.read();
@@ -18,6 +32,7 @@ void readIncomingSerial() {
         inLine[inPos] = '\0';
         handleAssignLine(inLine);
         handleIconLine(inLine);
+        handleVolumeLine(inLine);
         inPos = 0;
       }
     } else if (inPos < (int)sizeof(inLine) - 1) {
