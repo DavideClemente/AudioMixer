@@ -44,7 +44,7 @@ void readIncomingSerial() {
 void onKnobChange(const char* id, float value) {
   int idx = -1;
   if (strncmp(id, "knob", 4) == 0)
-    idx = atoi(id + 4) - 1;   // "knob1" → 0
+    idx = atoi(id + 4) - 1;   // "knob1" -> 0
 
   if (idx >= 0 && idx < MAX_KNOBS)
     displayShowKnob(idx, value);
@@ -64,7 +64,9 @@ void loop() {
   knobsLoop();
 
   if (!isIdle && millis() - lastKnobActivity > IDLE_TIMEOUT_MS) {
-    displayIdle();
+    displayEnterIdle();
     isIdle = true;
   }
+
+  displayTick();
 }
