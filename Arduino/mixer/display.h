@@ -2,4 +2,5 @@
 
 void displaySetup();
 void displayShowKnob(int knobIndex, float value);
-void displayIdle();
+void displayEnterIdle();
+void displayTick();
