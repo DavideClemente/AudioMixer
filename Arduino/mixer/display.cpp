@@ -5,7 +5,8 @@
 #include <math.h>
 
 static TFT_eSPI    tft;
-static TFT_eSprite numSpr = TFT_eSprite(&tft);
+static TFT_eSprite numSpr  = TFT_eSprite(&tft);
+static bool        numSprOK = false;
 
 // ── Geometry (match prototype CONSTANTS TABLE) ────────────────────────────────
 // CX=120, CY=120, ARC_R=108, ARC_W=9, A0=32.4°, SWEEP=295.2°
@@ -82,16 +83,28 @@ static void drawTipDot(float frac, uint16_t color) {
 }
 
 // Draw the number percentage inside the numSpr sprite and push it to the screen.
-// Sprite: 120×54, centered horizontally (CX-60 … CX+60), vertical center at y=165.
-//   pushSprite(60, 138)  →  sprite center = 60 + 27 = 165 ✓
+// Sprite: 150×56 (FIX 2), center = (75, 28).
+//   pushSprite(CX-75, 137)  →  x=45, center-y = 137+28 = 165 ✓
+// If numSpr allocation failed (FIX 1 null-guard), falls back to direct tft draw:
+//   clears region x=[CX-75,CX+75], y=[137,193] then draws the number on tft directly.
 static void drawNumber(int pct, uint16_t color) {
-  numSpr.fillSprite(TFT_BLACK);
-  numSpr.setTextDatum(MC_DATUM);
-  numSpr.setTextColor(color, TFT_BLACK);
-  numSpr.setTextFont(4);   // TFT_eSPI built-in font (substitutes prototype's bold 52px Courier New)
-  numSpr.setTextSize(2);
-  numSpr.drawNumber(pct, 60, 27); // draw at sprite center (60,27)
-  numSpr.pushSprite(CX - 60, 138); // sprite top-left: x=60, y=138 → center y = 138+27=165
+  if (numSprOK) {
+    numSpr.fillSprite(TFT_BLACK);
+    numSpr.setTextDatum(MC_DATUM);
+    numSpr.setTextColor(color, TFT_BLACK);
+    numSpr.setTextFont(4);   // TFT_eSPI built-in font; reduce setTextSize if "100" clips — confirm on device
+    numSpr.setTextSize(2);
+    numSpr.drawNumber(pct, 75, 28); // draw at sprite-local center (75,28)
+    numSpr.pushSprite(CX - 75, 137); // top-left x=45, y=137 → center y=165
+  } else {
+    // Direct-to-tft fallback: clear the number region then draw without sprite
+    tft.fillRect(CX - 75, 137, 150, 56, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(color, TFT_BLACK);
+    tft.setTextFont(4);
+    tft.setTextSize(2);
+    tft.drawNumber(pct, CX, 165);
+  }
 }
 
 // Full redraw of the active screen (on app switch or first show).
@@ -130,6 +143,47 @@ static void fullActiveRedraw() {
   lastPct     = -1;
 }
 
+// Erase the tip dot at arc fraction `frac` by repainting the underlying arc
+// over a ±4° window centered on that fraction.  The window is split at
+// shownVol (the current fill boundary): the portion ≤ shownVol is painted in
+// accent color, the portion > shownVol is painted in TRACK color.
+// This prevents a stray "crumb" when volume reverses direction and the old dot
+// straddles both the filled and unfilled regions.
+static void eraseTipAt(float frac, uint16_t col) {
+  // Convert ±4° window to fraction units and clamp to [0,1]
+  const float HALF_WIN = 4.0f / SWEEP; // 4 degrees expressed as arc fraction
+  float lo = frac - HALF_WIN;
+  float hi = frac + HALF_WIN;
+  if (lo < 0.0f) lo = 0.0f;
+  if (hi > 1.0f) hi = 1.0f;
+
+  // Filled portion of the window (≤ shownVol) → accent color
+  float fillHi = shownVol;
+  if (fillHi > lo && fillHi > hi) fillHi = hi;  // clamp to window
+
+  if (lo < fillHi) {
+    tft.drawSmoothArc(CX, CY,
+                      ARC_R + ARC_W / 2,
+                      ARC_R - ARC_W / 2,
+                      (uint32_t)(A0 + SWEEP * lo),
+                      (uint32_t)(A0 + SWEEP * fillHi),
+                      col, TFT_BLACK, false);
+  }
+
+  // Unfilled portion of the window (> shownVol) → TRACK color
+  float trackLo = shownVol;
+  if (trackLo < lo) trackLo = lo;  // clamp to window
+
+  if (trackLo < hi) {
+    tft.drawSmoothArc(CX, CY,
+                      ARC_R + ARC_W / 2,
+                      ARC_R - ARC_W / 2,
+                      (uint32_t)(A0 + SWEEP * trackLo),
+                      (uint32_t)(A0 + SWEEP * hi),
+                      TRACK, TFT_BLACK, false);
+  }
+}
+
 // Incremental arc update + tip dot + number sprite.
 // Called every ANIM_DT ms when in ACTIVE mode.
 static void animateActive() {
@@ -158,11 +212,12 @@ static void animateActive() {
                       TRACK, TFT_BLACK, false);
   }
 
-  // Erase old tip dot (paint it with whatever color is behind it)
-  // If volume increased the old tip was in filled region → accent color.
-  // If decreased it was in the (now-erased) region → TRACK.
-  drawTipDot(lastArcFrac, (shownVol >= lastArcFrac) ? col : TRACK);
-  // Draw new tip dot (white, radius TIP_DOT_R=6)
+  // Erase old tip dot by repainting the underlying arc beneath it (FIX 3).
+  // A short ±4° arc window centered on lastArcFrac is repainted with the
+  // correct split (accent below shownVol, TRACK above), eliminating the stray
+  // crumb that appeared when volume reversed direction.
+  eraseTipAt(lastArcFrac, col);
+  // Draw new tip dot (white, radius TIP_DOT_R=6) — unchanged
   drawTipDot(shownVol, TFT_WHITE);
 
   lastArcFrac = shownVol;
@@ -258,7 +313,10 @@ void displaySetup() {
   tft.init();
   tft.setRotation(0);
   numSpr.setColorDepth(16);
-  numSpr.createSprite(120, 54);  // 120 wide, 54 tall; center = (60, 27)
+  // Sprite 150×56: wide enough for "100" at font4/size2 without clipping.
+  // NOTE: exact fit must be confirmed on device; reduce setTextSize to 1.5 (or
+  // use a narrower font) if "100" still clips at the right edge.
+  numSprOK = (numSpr.createSprite(150, 56) != nullptr);
   idleDirty = true;
   mode      = IDLE;
 }
