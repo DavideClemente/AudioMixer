@@ -50,7 +50,8 @@ public class SerialManager
         {
             var knobId = $"knob{knobIndex + 1}";
             var hex = $"{color.R:X2}{color.G:X2}{color.B:X2}";
-            _port.WriteLine($"assign:{knobId}:{hex}:{appName}");
+            var safeName = appName.Replace("\r", "").Replace("\n", "");
+            _port.WriteLine($"assign:{knobId}:{hex}:{safeName}");
             if (iconRgb565.Length > 0)
                 _port.WriteLine($"icon:{knobId}:{Convert.ToBase64String(iconRgb565)}");
         }
