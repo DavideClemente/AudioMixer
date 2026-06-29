@@ -14,4 +14,6 @@ public class AppSettings
     public List<ChannelConfig> Channels { get; set; } = new();
     public List<string> ExcludedProcesses { get; set; } = new();
     public bool DebugSerialEvents { get; set; } = false;
+    public List<IdleGifConfig> IdleGifs { get; set; } = new();
+    public string? ActiveIdleGifId { get; set; }
 }
