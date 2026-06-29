@@ -12,16 +12,20 @@
     <Grid Padding="24">
 
         <ScrollViewer>
-            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Channels}">
-                <ItemsRepeater.Layout>
-                    <UniformGridLayout MinItemWidth="260" MinItemHeight="200" ItemsStretch="Fill" />
-                </ItemsRepeater.Layout>
-                <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ChannelViewModel">
-                        <controls:KnobCard Channel="{x:Bind}" />
-                    </DataTemplate>
-                </ItemsRepeater.ItemTemplate>
-            </ItemsRepeater>
+            <Grid>
+                <ItemsRepeater x:Name="ChannelsRepeater" ItemsSource="{x:Bind ViewModel.Channels}">
+                    <ItemsRepeater.Layout>
+                        <UniformGridLayout MinItemWidth="260" MinItemHeight="200" ItemsStretch="Fill" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ChannelViewModel">
+                            <Grid>
+                                <controls:KnobCard Channel="{x:Bind}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+            </Grid>
         </ScrollViewer>
 
         <Button
@@ -33,7 +37,20 @@
             CornerRadius="28"
             HorizontalAlignment="Right"
             VerticalAlignment="Bottom"
-            Margin="0,0,24,24" />
+            Margin="0,0,24,24"
+            BorderThickness="1">
+            <Button.Resources>
+                <SolidColorBrush x:Key="ButtonBackground" Color="#1C1C1C"/>
+                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#282828"/>
+                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#111111"/>
+                <SolidColorBrush x:Key="ButtonBorderBrush" Color="#383838"/>
+                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#505050"/>
+                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#282828"/>
+                <SolidColorBrush x:Key="ButtonForeground" Color="#D0D0D0"/>
+                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#F0F0F0"/>
+                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#A0A0A0"/>
+            </Button.Resources>
+        </Button>
 
     </Grid>
 </Page>

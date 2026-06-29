@@ -1,0 +1,615 @@
+<!--
+=============================================================================
+  CONSTANTS TABLE  —  ESP32 GC9A01 240×240 Round Display
+  All values are final and should be ported 1:1 to firmware.
+=============================================================================
+
+  SCREEN
+    CX  = 120          (px)  canvas center X
+    CY  = 120          (px)  canvas center Y
+
+  ARC GAUGE
+    ARC_R       = 108  (px)  arc radius (stroke center)
+    ARC_W       = 9    (px)  arc stroke width
+    A0          = 32.4 (°)   arc start angle; 0 = 6 o'clock, clockwise
+    SWEEP       = 295.2(°)   total arc sweep (≈82% of 360°)
+    GAP_HALF    = 32.4 (°)   half-gap centered at 6 o'clock
+    CANVAS_A_START = 122.4 (°, canvas coords, 0=3 o'clock CW)
+                             = (90 + 32.4)  → in radians: 2.1362...
+    CANVAS_A_END   = 57.6  (°, canvas coords)
+                             = (90 - 32.4)  → in radians: 1.0053...
+    TIP_DOT_R   = 6    (px)  radius of the white tip dot on the arc
+
+  ICON BOX
+    ICON_X      = 88   (px)  top-left X  (CX - 32)
+    ICON_Y      = 48   (px)  top-left Y
+    ICON_W      = 64   (px)
+    ICON_H      = 64   (px)
+
+  TYPOGRAPHY  (all y values are baselines unless noted)
+    NAME_BASELINE_Y    = 136  (px)  app name (uppercase, letter-spacing)
+    NAME_FONT          = "bold 13px 'Courier New', monospace"
+    NUMBER_CENTER_X    = 120  (px)
+    NUMBER_CENTER_Y    = 165  (px)  (textBaseline = "middle")
+    NUMBER_FONT        = "bold 52px 'Courier New', monospace"
+
+  EASING / ANIMATION
+    EASE_K          = 0.08   (dimensionless) shown += (target - shown) * k
+    ANIMATION_MS    = 16     (ms)  ~60 fps requestAnimationFrame
+    IDLE_FRAME_MS   = 16     (ms)  idle animation tick (same RAF loop)
+    IDLE_BREATH_MS  = 1800   (ms)  breathing ring period
+
+  COLORS
+    BG              = #0A0A0A        (very dark black)
+    TRACK_COLOR     = #2A2A2A        (dim gray arc track)
+    TIP_DOT_COLOR   = #FFFFFF        (white)
+    NAME_COLOR      = accent         (same as fill)
+    NUMBER_COLOR    = #FFFFFF        (white, large)
+    IDLE_RING_BASE  = #1C1C1C        (dim ring)
+    IDLE_WORDMARK   = #3A3A3A        (muted gray text)
+
+  DEFAULT ACCENT
+    Accent default  = #00C8FF        (RGB: 0,200,255 — RGB565: 0x065F)
+
+  PER-APP ACCENTS (hardcoded sample apps)
+    Spotify         = #1DB954        (RGB: 29,185,84)
+    Discord         = #5865F2        (RGB: 88,101,242)
+    Chrome          = #E8453C        (RGB: 232,69,60)
+
+=============================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 GC9A01 Display — Reference Prototype</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+  }
+
+  h1 {
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: #444;
+    font-weight: 400;
+  }
+
+  /* Round display bezel */
+  .display-wrap {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bezel {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #2a2a2a 0%, #0d0d0d 60%, #050505 100%);
+    box-shadow:
+      0 0 0 1px #1a1a1a,
+      0 0 0 3px #0d0d0d,
+      0 0 0 6px #111,
+      0 8px 40px rgba(0,0,0,0.9),
+      0 2px 8px rgba(0,0,0,0.8),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  canvas {
+    position: relative;
+    z-index: 1;
+    border-radius: 50%;
+    display: block;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  button {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #888;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 10px 18px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  button:hover {
+    background: #222;
+    border-color: #444;
+    color: #bbb;
+  }
+
+  button:active {
+    transform: scale(0.97);
+  }
+
+  .info {
+    font-size: 10px;
+    color: #333;
+    letter-spacing: 0.1em;
+    text-align: center;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+
+<h1>ESP32 GC9A01 · AudioMixer Display · Reference Prototype</h1>
+
+<div class="display-wrap">
+  <div class="bezel"></div>
+  <canvas id="screen" width="240" height="240"></canvas>
+</div>
+
+<div class="controls">
+  <button id="btnVolumeUp">Turn knob (vol +10)</button>
+  <button id="btnVolumeDown">Turn knob (vol -10)</button>
+  <button id="btnSwitch">Switch app</button>
+  <button id="btnIdle">Go idle</button>
+</div>
+
+<div class="info">
+  <span id="dbgInfo">—</span>
+</div>
+
+<script>
+// ==========================================================================
+//  CONSTANTS  (match the CONSTANTS TABLE comment at top of file)
+// ==========================================================================
+const CX    = 120;
+const CY    = 120;
+const ARC_R = 108;
+const ARC_W = 9;
+
+// Arc angles in canvas coords (0=3 o'clock, clockwise, in radians)
+// Gap of 64.8° centered at 6 o'clock (canvas 90°).
+// Start: 90° + 32.4° = 122.4°;  End: 90° - 32.4° = 57.6°
+const DEG  = Math.PI / 180;
+const CANVAS_A_START = 122.4 * DEG;   // arc fill starts here (bottom-left of gap)
+const CANVAS_A_SWEEP = 295.2 * DEG;   // total sweep clockwise
+const CANVAS_A_END   = CANVAS_A_START + CANVAS_A_SWEEP; // = 57.6° in canvas
+
+const TIP_R = 6;   // tip dot radius (px)
+
+// Icon box
+const ICON_X = CX - 32;  // = 88
+const ICON_Y = 48;
+const ICON_W = 64;
+const ICON_H = 64;
+
+// Typography baselines / centers
+const NAME_Y   = 136;   // baseline
+const NUM_X    = CX;    // = 120
+const NUM_Y    = 165;   // middle (textBaseline=middle)
+
+// Easing
+const EASE_K   = 0.08;
+
+// Idle
+const IDLE_BREATH_MS = 1800;
+
+// Colors
+const BG_COLOR    = '#0A0A0A';
+const TRACK_COLOR = '#2A2A2A';
+
+// ==========================================================================
+//  APP DATA
+// ==========================================================================
+const APPS = [
+  {
+    name: 'SPOTIFY',
+    accent: '#1DB954',
+    accentRgb: [29, 185, 84],
+    icon: drawSpotifyIcon,
+  },
+  {
+    name: 'DISCORD',
+    accent: '#5865F2',
+    accentRgb: [88, 101, 242],
+    icon: drawDiscordIcon,
+  },
+  {
+    name: 'CHROME',
+    accent: '#E8453C',
+    accentRgb: [232, 69, 60],
+    icon: drawChromeIcon,
+  },
+];
+
+// ==========================================================================
+//  STATE
+// ==========================================================================
+let state = {
+  mode: 'app',           // 'app' | 'idle'
+  appIndex: 0,
+  targetVol: 0.72,       // 0–1
+  shownVol: 0.0,         // eased toward targetVol
+  // arc intro: on app switch, arc re-introduces from 0
+  introFrom: 0.0,        // arcs sweep from this (0 = bottom of gap)
+  introActive: false,
+  introShown: 0.0,
+  idleTime: 0,           // ms elapsed in idle mode
+  lastTs: null,
+};
+
+// ==========================================================================
+//  CANVAS SETUP
+// ==========================================================================
+const canvas = document.getElementById('screen');
+const ctx    = canvas.getContext('2d');
+
+// Clip all drawing to a circle (makes the display feel round)
+function clipToCircle() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CX, CY, 120, 0, Math.PI * 2);
+  ctx.clip();
+}
+
+// ==========================================================================
+//  ICON DRAWERS  (64×64, origin at top-left of icon box)
+//  Each receives (ctx, x, y) where (x,y) = ICON_X, ICON_Y
+// ==========================================================================
+
+function drawSpotifyIcon(ctx, x, y) {
+  const cx = x + 32, cy = y + 32, r = 28;
+  // Green circle background
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#1DB954';
+  ctx.fill();
+  // Three arcs (simplified Spotify logo)
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  // Top arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, 17, -0.9, Math.PI + 0.9);
+  ctx.stroke();
+  // Middle arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, 12, -0.85, Math.PI + 0.85);
+  ctx.stroke();
+  // Bottom arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, 7, -0.8, Math.PI + 0.8);
+  ctx.stroke();
+}
+
+function drawDiscordIcon(ctx, x, y) {
+  const cx = x + 32, cy = y + 32, r = 28;
+  // Blurple circle background
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#5865F2';
+  ctx.fill();
+  // Simplified controller/headset silhouette
+  ctx.fillStyle = '#fff';
+  // Body (rounded rect)
+  const bx = cx - 14, by = cy - 8, bw = 28, bh = 18;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 6);
+  ctx.fill();
+  // Eyes (dark circles)
+  ctx.fillStyle = '#5865F2';
+  ctx.beginPath();
+  ctx.arc(cx - 6, cy + 1, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 6, cy + 1, 4, 0, Math.PI * 2);
+  ctx.fill();
+  // Left ear
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - 14, cy - 2, 5, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.fill();
+  // Right ear
+  ctx.beginPath();
+  ctx.arc(cx + 14, cy - 2, 5, -Math.PI * 0.5, Math.PI * 0.5);
+  ctx.fill();
+}
+
+function drawChromeIcon(ctx, x, y) {
+  const cx = x + 32, cy = y + 32, r = 28;
+  // Outer ring segments (red, green, yellow)
+  const colors = ['#EA4335', '#34A853', '#FBBC05'];
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, (i * 2 / 3 - 0.5) * Math.PI, ((i + 1) * 2 / 3 - 0.5) * Math.PI);
+    ctx.closePath();
+    ctx.fillStyle = colors[i];
+    ctx.fill();
+  }
+  // Inner blue circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+  ctx.fillStyle = '#4285F4';
+  ctx.fill();
+  // White ring between outer and inner
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.68, 0, Math.PI * 2);
+  ctx.lineWidth = r * 0.26;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  // Inner white circle to clean up
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+  ctx.fillStyle = '#4285F4';
+  ctx.fill();
+}
+
+// ==========================================================================
+//  DRAWING HELPERS
+// ==========================================================================
+
+function drawArcTrack() {
+  ctx.beginPath();
+  ctx.arc(CX, CY, ARC_R, CANVAS_A_START, CANVAS_A_END);
+  ctx.strokeStyle = TRACK_COLOR;
+  ctx.lineWidth   = ARC_W;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+}
+
+function drawArcFill(fraction, accent) {
+  if (fraction <= 0) return;
+  const endAngle = CANVAS_A_START + fraction * CANVAS_A_SWEEP;
+  ctx.beginPath();
+  ctx.arc(CX, CY, ARC_R, CANVAS_A_START, endAngle);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth   = ARC_W;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+}
+
+function drawTipDot(fraction, accent) {
+  if (fraction <= 0) return;
+  const angle = CANVAS_A_START + fraction * CANVAS_A_SWEEP;
+  const tx = CX + ARC_R * Math.cos(angle);
+  const ty = CY + ARC_R * Math.sin(angle);
+
+  // Glow behind dot
+  const grd = ctx.createRadialGradient(tx, ty, 0, tx, ty, TIP_R * 3.5);
+  grd.addColorStop(0, accent + '66');
+  grd.addColorStop(1, accent + '00');
+  ctx.beginPath();
+  ctx.arc(tx, ty, TIP_R * 3.5, 0, Math.PI * 2);
+  ctx.fillStyle = grd;
+  ctx.fill();
+
+  // White dot
+  ctx.beginPath();
+  ctx.arc(tx, ty, TIP_R, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+}
+
+function drawAppName(name, accent) {
+  ctx.font        = 'bold 13px "Courier New", monospace';
+  ctx.fillStyle   = accent;
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.letterSpacing = '0.18em';
+  ctx.fillText(name, CX, NAME_Y);
+  ctx.letterSpacing = '0';
+}
+
+function drawVolNumber(vol, alpha) {
+  const pct = Math.round(vol * 100);
+  ctx.font        = 'bold 52px "Courier New", monospace';
+  ctx.fillStyle   = `rgba(255,255,255,${alpha})`;
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(pct), NUM_X, NUM_Y);
+}
+
+// ==========================================================================
+//  IDLE ANIMATION
+// ==========================================================================
+
+function drawIdle(elapsed) {
+  const t  = elapsed / 1000;  // seconds
+
+  // -- Background --
+  ctx.fillStyle = BG_COLOR;
+  ctx.fillRect(0, 0, 240, 240);
+
+  // -- Breathing ring --
+  const breathPhase = (elapsed % IDLE_BREATH_MS) / IDLE_BREATH_MS;  // 0–1
+  const breathVal   = 0.5 + 0.5 * Math.sin(breathPhase * Math.PI * 2 - Math.PI / 2); // 0–1
+  const ringAlpha   = 0.08 + 0.18 * breathVal;
+  const ringR       = 105 + 3 * breathVal;
+
+  ctx.beginPath();
+  ctx.arc(CX, CY, ringR, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255,255,255,${ringAlpha})`;
+  ctx.lineWidth   = 2;
+  ctx.stroke();
+
+  // Outer dim ring (static)
+  ctx.beginPath();
+  ctx.arc(CX, CY, 112, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth   = 1;
+  ctx.stroke();
+
+  // -- Three orbiting accent dots --
+  // Each drifts slowly at slightly different speeds / radii
+  const orbitDefs = [
+    { accent: '#1DB954', speed: 0.28, r: 70, phase: 0,          dr: 5 },
+    { accent: '#5865F2', speed: 0.19, r: 80, phase: 2.09,       dr: 4 },
+    { accent: '#E8453C', speed: 0.23, r: 74, phase: 4.19,       dr: 6 },
+  ];
+
+  for (const od of orbitDefs) {
+    const angle  = t * od.speed * Math.PI * 2 + od.phase;
+    const radius = od.r + od.dr * Math.sin(t * 0.7 + od.phase);
+    const dx = CX + radius * Math.cos(angle);
+    const dy = CY + radius * Math.sin(angle);
+
+    // Soft glow
+    const grd = ctx.createRadialGradient(dx, dy, 0, dx, dy, 10);
+    grd.addColorStop(0, od.accent + 'aa');
+    grd.addColorStop(1, od.accent + '00');
+    ctx.beginPath();
+    ctx.arc(dx, dy, 10, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(dx, dy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = od.accent;
+    ctx.fill();
+  }
+
+  // -- Wordmark --
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'middle';
+
+  // "AudioMixer" with a breathing opacity
+  const wmAlpha = 0.22 + 0.12 * breathVal;
+  ctx.font      = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle = `rgba(200,200,200,${wmAlpha})`;
+  ctx.letterSpacing = '0.18em';
+  ctx.fillText('AUDIOMIXER', CX, CY - 8);
+  ctx.letterSpacing = '0';
+
+  // "READY" smaller, dimmer
+  const rdAlpha = 0.14 + 0.08 * breathVal;
+  ctx.font      = '9px "Courier New", monospace';
+  ctx.fillStyle = `rgba(150,150,150,${rdAlpha})`;
+  ctx.letterSpacing = '0.35em';
+  ctx.fillText('READY', CX, CY + 12);
+  ctx.letterSpacing = '0';
+}
+
+// ==========================================================================
+//  ACTIVE APP FRAME
+// ==========================================================================
+
+function drawApp(app, shownVol, alpha) {
+  // -- Background --
+  ctx.fillStyle = BG_COLOR;
+  ctx.fillRect(0, 0, 240, 240);
+
+  // -- Arc track (always full) --
+  drawArcTrack();
+
+  // -- Arc fill up to current level --
+  drawArcFill(shownVol, app.accent);
+
+  // -- Tip dot --
+  drawTipDot(shownVol, app.accent);
+
+  // -- Icon --
+  app.icon(ctx, ICON_X, ICON_Y);
+
+  // -- App name --
+  drawAppName(app.name, app.accent);
+
+  // -- Volume number --
+  drawVolNumber(shownVol, alpha);
+}
+
+// ==========================================================================
+//  ANIMATION LOOP
+// ==========================================================================
+
+function tick(ts) {
+  if (state.lastTs === null) state.lastTs = ts;
+  const dt = Math.min(ts - state.lastTs, 64);  // cap at 64 ms (tab paused etc.)
+  state.lastTs = ts;
+
+  clipToCircle();
+
+  if (state.mode === 'idle') {
+    state.idleTime += dt;
+    drawIdle(state.idleTime);
+  } else {
+    // Ease shown volume toward target
+    state.shownVol += (state.targetVol - state.shownVol) * EASE_K;
+    if (Math.abs(state.shownVol - state.targetVol) < 0.001) {
+      state.shownVol = state.targetVol;
+    }
+
+    const app = APPS[state.appIndex];
+    drawApp(app, state.shownVol, 1.0);
+  }
+
+  ctx.restore();  // restore from clipToCircle's save
+
+  // Debug info
+  const app = APPS[state.appIndex];
+  document.getElementById('dbgInfo').textContent =
+    state.mode === 'idle'
+      ? 'MODE: IDLE'
+      : `APP: ${app.name}  |  VOL: ${Math.round(state.shownVol * 100)}  |  TARGET: ${Math.round(state.targetVol * 100)}`;
+
+  requestAnimationFrame(tick);
+}
+
+// ==========================================================================
+//  BUTTON HANDLERS
+// ==========================================================================
+
+document.getElementById('btnVolumeUp').addEventListener('click', () => {
+  if (state.mode === 'idle') state.mode = 'app';
+  state.targetVol = Math.min(1.0, state.targetVol + 0.10);
+});
+
+document.getElementById('btnVolumeDown').addEventListener('click', () => {
+  if (state.mode === 'idle') state.mode = 'app';
+  state.targetVol = Math.max(0.0, state.targetVol - 0.10);
+});
+
+document.getElementById('btnSwitch').addEventListener('click', () => {
+  state.mode     = 'app';
+  state.appIndex = (state.appIndex + 1) % APPS.length;
+  // Re-introduce arc from 0: reset shown volume to 0, target stays
+  state.shownVol = 0.0;
+  // Keep targetVol so it eases up to it fresh from 0
+});
+
+document.getElementById('btnIdle').addEventListener('click', () => {
+  state.mode     = 'idle';
+  state.idleTime = 0;
+  // Reset so next app wakeup starts from 0
+  state.shownVol = 0.0;
+});
+
+// ==========================================================================
+//  START
+// ==========================================================================
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

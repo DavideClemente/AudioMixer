@@ -1,6 +1,4 @@
 using System;
-using System.IO.Ports;
-using System.Linq;
 using AudioMixerWin.Core.Models;
 using AudioMixerWin.Core.ViewModels;
 using Microsoft.UI.Xaml;
@@ -14,10 +12,7 @@ public sealed partial class SettingsPage : Page
 
     public MainViewModel ViewModel { get; }
 
-    public string[] PortNames { get; } = SerialPort.GetPortNames()
-        .Union(Enumerable.Range(1, 15).Select(i => $"COM{i}"), StringComparer.OrdinalIgnoreCase)
-        .OrderBy(GetPortNumber)
-        .ToArray();
+    public ComPortInfo[] PortInfos { get; } = ComPortInfo.GetPorts();
 
     public int[] BaudRates { get; } = { 9600, 19200, 38400, 57600, 115200 };
 
@@ -57,6 +52,4 @@ public sealed partial class SettingsPage : Page
         ViewModel.UnhideProcessCommand.Execute(processName);
     }
 
-    private static int GetPortNumber(string portName) =>
-        int.TryParse(portName.AsSpan(3), out var number) ? number : int.MaxValue;
 }

@@ -8,9 +8,25 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+
+            <!-- Carbon theme: near-white accent replaces system colour -->
+            <Color x:Key="SystemAccentColor">#C8C8C8</Color>
+            <Color x:Key="SystemAccentColorDark1">#A0A0A0</Color>
+            <Color x:Key="SystemAccentColorDark2">#787878</Color>
+            <Color x:Key="SystemAccentColorDark3">#505050</Color>
+            <Color x:Key="SystemAccentColorLight1">#D8D8D8</Color>
+            <Color x:Key="SystemAccentColorLight2">#E8E8E8</Color>
+            <Color x:Key="SystemAccentColorLight3">#F4F4F4</Color>
+
+            <!-- NavigationView selection indicator -->
+            <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="#D0D0D0"/>
+
+            <!-- NavigationView pane background -->
+            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#111111"/>
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="#0A0A0A"/>
+            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#111111"/>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

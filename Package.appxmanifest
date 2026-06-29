@@ -11,7 +11,7 @@
   <Identity
     Name="218542d6-adc8-451f-951b-985052244865"
     Publisher="CN=Davide"
-    Version="1.0.0.0" />
+    Version="1.0.0.1" />
 
   <mp:PhoneIdentity PhoneProductId="218542d6-adc8-451f-951b-985052244865" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

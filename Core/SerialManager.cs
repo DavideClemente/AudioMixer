@@ -8,17 +8,18 @@ namespace AudioMixerWin.Core;
 public class SerialManager
 {
     private readonly SerialPort _port;
-    private readonly InputMode _inputMode;
 
-    public event Action<int, float>? KnobChanged;
-    public event Action<int, int>? KnobDelta;
+    public event Action<string, float>? KnobChanged;
+    public event Action<string, int>? KnobDelta;
+    public event Action<string>? KnobPressed;
 
-    public SerialManager(string comPort, int baudRate, InputMode inputMode = InputMode.Potentiometer)
+    public SerialManager(string comPort, int baudRate)
     {
         _port = new SerialPort(comPort, baudRate);
         _port.DataReceived += OnData;
-        _inputMode = inputMode;
     }
+
+    public bool IsConnected => _port.IsOpen;
 
     public void Start()
     {
@@ -33,6 +34,28 @@ public class SerialManager
             if (_port.IsOpen)
                 _port.Close();
             _port.Dispose();
+        }
+        catch { }
+    }
+
+    public void SendVolume(int knobIndex, float volume)
+    {
+        if (!_port.IsOpen) return;
+        try { _port.WriteLine($"vol:knob{knobIndex + 1}:{volume.ToString("F2", CultureInfo.InvariantCulture)}"); }
+        catch { }
+    }
+
+    public void SendAssignment(int knobIndex, string appName, (byte R, byte G, byte B) color, byte[] iconRgb565)
+    {
+        if (!_port.IsOpen) return;
+        try
+        {
+            var knobId = $"knob{knobIndex + 1}";
+            var hex = $"{color.R:X2}{color.G:X2}{color.B:X2}";
+            var safeName = appName.Replace("\r", "").Replace("\n", "");
+            _port.WriteLine($"assign:{knobId}:{hex}:{safeName}");
+            if (iconRgb565.Length > 0)
+                _port.WriteLine($"icon:{knobId}:{Convert.ToBase64String(iconRgb565)}");
         }
         catch { }
     }
@@ -53,18 +76,16 @@ public class SerialManager
         if (parts.Length != 2)
             return;
 
-        if (!int.TryParse(parts[0], out var knobIndex))
-            return;
+        var knobId  = parts[0].Trim();
+        var payload = parts[1].Trim();
 
-        if (_inputMode == InputMode.RotaryEncoder)
-        {
-            if (int.TryParse(parts[1], out var delta))
-                KnobDelta?.Invoke(knobIndex, delta);
-        }
-        else
-        {
-            if (float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
-                KnobChanged?.Invoke(knobIndex, Math.Clamp(value, 0f, 1f));
-        }
+        if (payload == "up")
+            KnobDelta?.Invoke(knobId, +1);
+        else if (payload == "down")
+            KnobDelta?.Invoke(knobId, -1);
+        else if (payload == "press")
+            KnobPressed?.Invoke(knobId);
+        else if (float.TryParse(payload, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            KnobChanged?.Invoke(knobId, Math.Clamp(value, 0f, 1f));
     }
 }

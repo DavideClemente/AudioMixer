@@ -5,6 +5,7 @@ using System.Collections.Specialized;
 using System.Linq;
 using AudioMixerWin.Core.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml.Media;
 
 namespace AudioMixerWin.Core.ViewModels;
@@ -16,6 +17,7 @@ public partial class ChannelViewModel : ObservableObject
     private readonly Action<ChannelViewModel> _onRemove;
     private readonly Action _onSettingsChanged;
     private readonly Func<AudioSession, string?> _onHideSession;
+    private readonly Action<ChannelViewModel> _onSyncNeeded;
 
     public int KnobIndex { get; }
 
@@ -33,6 +35,12 @@ public partial class ChannelViewModel : ObservableObject
     [ObservableProperty]
     private ImageSource? iconSource;
 
+    [ObservableProperty]
+    private bool isMuted;
+
+    [ObservableProperty]
+    private bool isSerialConnected;
+
     public string DisplayName => AudioManager.GetDisplayName(AppName);
 
     public ChannelViewModel(
@@ -43,7 +51,8 @@ public partial class ChannelViewModel : ObservableObject
         ObservableCollection<ChannelViewModel> channels,
         Action<ChannelViewModel> onRemove,
         Action onSettingsChanged,
-        Func<AudioSession, string?> onHideSession)
+        Func<AudioSession, string?> onHideSession,
+        Action<ChannelViewModel> onSyncNeeded)
     {
         KnobIndex = knobIndex;
         _audioManager = audioManager;
@@ -52,8 +61,10 @@ public partial class ChannelViewModel : ObservableObject
         _onRemove = onRemove;
         _onSettingsChanged = onSettingsChanged;
         _onHideSession = onHideSession;
+        _onSyncNeeded = onSyncNeeded;
         this.appName = appName;
         volume = audioManager.GetVolume(appName) * 100;
+        isMuted = audioManager.GetMute(appName);
 
         AvailableSessions.CollectionChanged += OnAvailableSessionsChanged;
         IconSource = GetSessionIcon(appName);
@@ -62,8 +73,10 @@ public partial class ChannelViewModel : ObservableObject
     partial void OnAppNameChanged(string value)
     {
         Volume = _audioManager.GetVolume(value) * 100;
+        IsMuted = _audioManager.GetMute(value);
         IconSource = GetSessionIcon(value);
         _onSettingsChanged();
+        _onSyncNeeded(this);
     }
 
     private void OnAvailableSessionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -74,13 +87,23 @@ public partial class ChannelViewModel : ObservableObject
 
         IconSource = session.IconSource;
         Volume = _audioManager.GetVolume(AppName) * 100;
+        IsMuted = _audioManager.GetMute(AppName);
+        _onSyncNeeded(this);
     }
 
     private ImageSource? GetSessionIcon(string appName) =>
-        AvailableSessions.FirstOrDefault(s => s.ProcessName.Equals(appName, StringComparison.OrdinalIgnoreCase))?.IconSource;
+        AvailableSessions.FirstOrDefault(s => s.ProcessName.Equals(appName, StringComparison.OrdinalIgnoreCase))?.IconSource
+        // App not currently running: recover the last-known icon persisted to disk.
+        ?? _audioManager.GetIcon(appName);
 
     partial void OnVolumeChanged(double value) =>
         _audioManager.SetVolume(AppName, (float)(value / 100.0));
+
+    partial void OnIsMutedChanged(bool value) =>
+        _audioManager.SetMute(AppName, value);
+
+    [RelayCommand]
+    private void ToggleMute() => IsMuted = !IsMuted;
 
     public IEnumerable<AudioSession> GetSelectableSessions()
     {

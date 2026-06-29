@@ -13,4 +13,5 @@ public class AppSettings
     public float EncoderStepPercent { get; set; } = 2f;
     public List<ChannelConfig> Channels { get; set; } = new();
     public List<string> ExcludedProcesses { get; set; } = new();
+    public bool DebugSerialEvents { get; set; } = false;
 }

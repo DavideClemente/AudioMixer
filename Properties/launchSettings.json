@@ -4,7 +4,8 @@
       "commandName": "MsixPackage"
     },
     "AudioMixerWin (Unpackaged)": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "-r win-x64"
     }
   }
 }

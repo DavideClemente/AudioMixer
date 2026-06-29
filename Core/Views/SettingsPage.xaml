@@ -14,14 +14,18 @@
     </Page.Resources>
 
     <ScrollViewer>
-        <StackPanel Padding="24" Spacing="8" MaxWidth="400" HorizontalAlignment="Left">
+        <StackPanel Padding="24" Spacing="8" MaxWidth="600" HorizontalAlignment="Left">
 
-            <TextBlock Text="Serial Connection" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <TextBlock Text="Serial Connection" FontSize="20" FontWeight="SemiBold"
+                       FontFamily="Segoe UI Variable Display" Foreground="#E0E0E0" Margin="0,0,0,8" />
 
             <TextBlock Text="COM Port" />
             <ComboBox
-                ItemsSource="{x:Bind PortNames}"
-                SelectedItem="{x:Bind ViewModel.ComPort, Mode=TwoWay}"
+                x:Name="ComPortCombo"
+                ItemsSource="{x:Bind PortInfos}"
+                SelectedValuePath="Port"
+                SelectedValue="{x:Bind ViewModel.ComPort, Mode=TwoWay}"
+                DisplayMemberPath="DisplayText"
                 HorizontalAlignment="Stretch" />
 
             <TextBlock Text="Baud Rate" Margin="0,12,0,0" />
@@ -51,11 +55,45 @@
                     HorizontalAlignment="Stretch" />
             </StackPanel>
 
-            <Button Content="Reconnect" Command="{x:Bind ViewModel.ReconnectCommand}" Margin="0,16,0,0" />
+            <Button Content="Reconnect" Command="{x:Bind ViewModel.ReconnectCommand}"
+                    Margin="0,16,0,0" BorderThickness="1" CornerRadius="8">
+                <Button.Resources>
+                    <SolidColorBrush x:Key="ButtonBackground" Color="#1C1C1C"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#282828"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#111111"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#383838"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#505050"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#282828"/>
+                    <SolidColorBrush x:Key="ButtonForeground" Color="#C8C8C8"/>
+                    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#F0F0F0"/>
+                    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#A0A0A0"/>
+                </Button.Resources>
+            </Button>
 
             <TextBlock Text="{x:Bind ViewModel.SerialStatus, Mode=OneWay}" Opacity="0.7" Margin="0,8,0,0" />
 
-            <TextBlock Text="Audio Sessions" FontSize="20" FontWeight="SemiBold" Margin="0,24,0,8" />
+            <ToggleSwitch
+                Header="Debug serial events"
+                IsOn="{x:Bind ViewModel.DebugSerialEvents, Mode=TwoWay}"
+                Margin="0,16,0,0" />
+
+            <ListView
+                Visibility="{x:Bind ViewModel.DebugSerialEvents, Mode=OneWay}"
+                ItemsSource="{x:Bind ViewModel.SerialLog}"
+                MaxHeight="200"
+                IsHitTestVisible="False"
+                FontFamily="Consolas"
+                FontSize="12">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Padding" Value="0,1" />
+                        <Setter Property="MinHeight" Value="0" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+            </ListView>
+
+            <TextBlock Text="Audio Sessions" FontSize="20" FontWeight="SemiBold"
+                       FontFamily="Segoe UI Variable Display" Foreground="#E0E0E0" Margin="0,24,0,8" />
 
             <TextBlock Text="Refresh Interval (seconds)" />
             <NumberBox
