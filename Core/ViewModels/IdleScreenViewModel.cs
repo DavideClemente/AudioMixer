@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AudioMixerWin.Core.Models;
 using AudioMixerWin.Core.Services;
@@ -20,6 +21,11 @@ public partial class IdleScreenViewModel : ObservableObject
     private readonly Action _save;
     private readonly Func<Task<IReadOnlyList<StorageFile>>> _pickGifs;
     private readonly Func<XamlRoot?> _getXamlRoot;
+    private readonly Func<IdleGifConfig, IProgress<double>?, CancellationToken, Task> _pushGif;
+    private readonly Action _clearGif;
+    private readonly Func<bool> _isConnected;
+
+    private CancellationTokenSource? _pushCts;
 
     public ObservableCollection<IdleGifViewModel> Gifs { get; } = new();
 
@@ -29,6 +35,15 @@ public partial class IdleScreenViewModel : ObservableObject
     [ObservableProperty]
     private string usageText = "";
 
+    [ObservableProperty]
+    private bool isUploading;
+
+    [ObservableProperty]
+    private double uploadProgress;
+
+    [ObservableProperty]
+    private string uploadStatus = "";
+
     public bool HasGifs => Gifs.Count > 0;
 
     public IdleScreenViewModel(
@@ -36,13 +51,19 @@ public partial class IdleScreenViewModel : ObservableObject
         IdleGifLibraryService library,
         Action save,
         Func<Task<IReadOnlyList<StorageFile>>> pickGifs,
-        Func<XamlRoot?> getXamlRoot)
+        Func<XamlRoot?> getXamlRoot,
+        Func<IdleGifConfig, IProgress<double>?, CancellationToken, Task> pushGif,
+        Action clearGif,
+        Func<bool> isConnected)
     {
         _settings = settings;
         _library = library;
         _save = save;
         _pickGifs = pickGifs;
         _getXamlRoot = getXamlRoot;
+        _pushGif = pushGif;
+        _clearGif = clearGif;
+        _isConnected = isConnected;
 
         Gifs.CollectionChanged += (_, _) =>
         {
@@ -115,7 +136,7 @@ public partial class IdleScreenViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SetActive(IdleGifViewModel? gif)
+    private async Task SetActiveAsync(IdleGifViewModel? gif)
     {
         if (gif == null)
             return;
@@ -126,6 +147,51 @@ public partial class IdleScreenViewModel : ObservableObject
         SelectedGif = gif;
         _settings.ActiveIdleGifId = gif.Id;
         _save();
+
+        await PushAsync(gif);
+    }
+
+    // Selecting a GIF sends it to the controller automatically. If the controller
+    // is offline the choice is still saved; re-selecting once connected re-sends.
+    private async Task PushAsync(IdleGifViewModel gif)
+    {
+        if (!_isConnected())
+        {
+            UploadProgress = 0;
+            UploadStatus = "Saved. Connect the controller, then select this GIF again to send it.";
+            return;
+        }
+
+        // A newer selection supersedes any upload still in flight.
+        _pushCts?.Cancel();
+        var cts = _pushCts = new CancellationTokenSource();
+
+        IsUploading = true;
+        UploadProgress = 0;
+        UploadStatus = $"Sending \"{gif.OriginalName}\" to controller…";
+
+        try
+        {
+            var progress = new Progress<double>(p => UploadProgress = p);
+            await _pushGif(gif.Config, progress, cts.Token);
+            UploadStatus = "Active on controller";
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer push; leave the newer one to report status.
+        }
+        catch (Exception ex)
+        {
+            UploadStatus = ex.Message;
+        }
+        finally
+        {
+            if (ReferenceEquals(_pushCts, cts))
+            {
+                IsUploading = false;
+                _pushCts = null;
+            }
+        }
     }
 
     [RelayCommand]
@@ -151,14 +217,19 @@ public partial class IdleScreenViewModel : ObservableObject
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
 
+        var wasActive = _settings.ActiveIdleGifId == gif.Id;
+
         _library.Delete(gif.Config);
         _settings.IdleGifs.RemoveAll(c => c.Id == gif.Id);
         Gifs.Remove(gif);
 
-        if (_settings.ActiveIdleGifId == gif.Id)
+        if (wasActive)
         {
             _settings.ActiveIdleGifId = null;
             SelectedGif = null;
+            UploadStatus = "";
+            // Drop it from the controller too so it reverts to the built-in idle.
+            _clearGif();
         }
 
         _save();

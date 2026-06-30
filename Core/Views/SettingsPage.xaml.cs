@@ -14,7 +14,7 @@ public sealed partial class SettingsPage : Page
 
     public ComPortInfo[] PortInfos { get; } = ComPortInfo.GetPorts();
 
-    public int[] BaudRates { get; } = { 9600, 19200, 38400, 57600, 115200 };
+    public int[] BaudRates { get; } = { 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600 };
 
     public SettingsPage(MainViewModel viewModel)
     {

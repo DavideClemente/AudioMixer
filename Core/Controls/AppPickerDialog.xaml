@@ -65,6 +65,11 @@
     <StackPanel Spacing="8">
         <InfoBar x:Name="HideInfoBar" Severity="Warning" IsOpen="False" IsClosable="True" />
 
+        <TextBlock Text="Knob" FontSize="13" Foreground="#C8C8C8" />
+        <ComboBox x:Name="KnobCombo" ItemsSource="{x:Bind KnobOptions}"
+                  DisplayMemberPath="Label" HorizontalAlignment="Stretch" />
+
+        <TextBlock Text="App" FontSize="13" Foreground="#C8C8C8" Margin="0,4,0,0" />
         <ListView x:Name="SessionsList" ItemsSource="{x:Bind SelectableSessions}" SelectionMode="Single"
                   Background="Transparent">
             <ListView.ItemContainerStyle>

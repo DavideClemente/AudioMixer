@@ -15,6 +15,10 @@
             <converters:NullToVisibleConverter x:Key="NullToVisible" />
             <converters:SelectedToBorderBrushConverter x:Key="SelectedToBorderBrush" />
             <converters:SelectedToBorderThicknessConverter x:Key="SelectedToBorderThickness" />
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisible" />
+            <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisible" />
+            <converters:StringToVisibilityConverter x:Key="StringToVisible" />
+            <converters:InverseBoolConverter x:Key="InverseBool" />
 
             <!-- Carbon theme: near-white accent replaces system colour -->
             <Color x:Key="SystemAccentColor">#C8C8C8</Color>

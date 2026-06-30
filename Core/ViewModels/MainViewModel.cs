@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AudioMixerWin.Core.Models;
 using AudioMixerWin.Core.Services;
@@ -16,6 +18,7 @@ namespace AudioMixerWin.Core.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly AudioManager _audioManager;
+    private readonly OutputManager _outputManager;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly AppSettings _settings;
     private readonly DispatcherTimer _refreshTimer;
@@ -23,6 +26,8 @@ public partial class MainViewModel : ObservableObject
     private readonly IdleGifLibraryService _idleGifLibrary = new();
 
     public IdleScreenViewModel? IdleScreen { get; private set; }
+
+    public OutputViewModel Output { get; }
 
     [ObservableProperty]
     private string comPort;
@@ -37,6 +42,9 @@ public partial class MainViewModel : ObservableObject
     private double refreshIntervalSeconds;
 
     [ObservableProperty]
+    private int idleTimeoutSeconds;
+
+    [ObservableProperty]
     private double navPaneWidth;
 
     [ObservableProperty]
@@ -46,7 +54,13 @@ public partial class MainViewModel : ObservableObject
     private double encoderStepPercent;
 
     [ObservableProperty]
+    private int knobCount;
+
+    [ObservableProperty]
     private bool debugSerialEvents;
+
+    [ObservableProperty]
+    private bool showPercentSign;
 
     [ObservableProperty]
     private int draggedChannelIndex = -1;
@@ -72,18 +86,24 @@ public partial class MainViewModel : ObservableObject
     {
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _audioManager = new AudioManager();
+        _outputManager = new OutputManager();
         _settings = SettingsService.Load();
 
         comPort = _settings.ComPort;
         baudRate = _settings.BaudRate;
         refreshIntervalSeconds = _settings.RefreshIntervalSeconds;
+        idleTimeoutSeconds = _settings.IdleTimeoutSeconds;
         navPaneWidth = _settings.NavPaneWidth;
         inputMode = _settings.InputMode;
         encoderStepPercent = _settings.EncoderStepPercent;
+        knobCount = _settings.KnobCount;
         debugSerialEvents = _settings.DebugSerialEvents;
+        showPercentSign = _settings.ShowPercentSign;
 
         foreach (var process in _settings.ExcludedProcesses)
             HiddenProcesses.Add(process);
+
+        Output = new OutputViewModel(_settings, _outputManager, () => SettingsService.Save(_settings));
 
         // Serial must be created before channels are added: AddChannelInternal
         // reads _serial.IsConnected to seed each channel's connected state.
@@ -101,7 +121,11 @@ public partial class MainViewModel : ObservableObject
         RefreshAvailableSessions();
 
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(RefreshIntervalSeconds) };
-        _refreshTimer.Tick += (_, _) => RefreshAvailableSessions();
+        _refreshTimer.Tick += (_, _) =>
+        {
+            RefreshAvailableSessions();
+            Output.RefreshDevices();
+        };
         _refreshTimer.Start();
     }
 
@@ -110,8 +134,52 @@ public partial class MainViewModel : ObservableObject
         Func<XamlRoot?> getXamlRoot)
     {
         IdleScreen = new IdleScreenViewModel(
-            _settings, _idleGifLibrary, () => SettingsService.Save(_settings), pickGifs, getXamlRoot);
+            _settings, _idleGifLibrary, () => SettingsService.Save(_settings), pickGifs, getXamlRoot,
+            PushIdleGifAsync, ClearIdleGif, () => _serial.IsConnected);
     }
+
+    // Display target for the GC9A01 (square; the round bezel hides the corners).
+    private const int IdleGifTarget = 240;
+    // Upper bound on frames regardless of free space — caps upload time and the
+    // firmware's in-RAM delay table (must stay <= MAX_GIF_FRAMES in idlegif.cpp).
+    private const int IdleGifFrameCap = 60;
+    // The board renders 240x240 from flash at ~15-20fps; resampling to this avoids
+    // wasting flash on frames it can't show and keeps playback at the right speed.
+    private const int IdleGifMaxFps = 20;
+
+    /// <summary>
+    /// Encodes the library GIF and uploads it to the controller's flash, adapting
+    /// the frame count to the device's free space. Throws
+    /// <see cref="IdleGifUploadException"/> with a user-readable reason on failure.
+    /// </summary>
+    public async Task PushIdleGifAsync(IdleGifConfig config, IProgress<double>? progress, CancellationToken ct)
+    {
+        if (!_serial.IsConnected)
+            throw new IdleGifUploadException("Controller is not connected.");
+
+        var path = _idleGifLibrary.PathFor(config);
+        if (!File.Exists(path))
+            throw new IdleGifUploadException("The GIF file is missing from the library cache.");
+
+        long free = await _serial.QueryIdleGifSpaceAsync(ct);
+        if (free < 0)
+            throw new IdleGifUploadException(
+                "No response from the controller. Check the connection and that the firmware baud rate matches (921600).");
+
+        long frameBytes = (long)IdleGifTarget * IdleGifTarget * 2;
+        long headerEstimate = 16 + 2L * IdleGifFrameCap; // magic+dims + delay table
+        int byBudget = (int)((free - headerEstimate) / frameBytes);
+        if (byBudget < 1)
+            throw new IdleGifUploadException(
+                "The controller has no free storage for a GIF. Flash a partition scheme with more filesystem space.");
+
+        int cap = Math.Min(IdleGifFrameCap, byBudget);
+
+        var encoded = await Task.Run(() => GifFrameEncoder.Encode(path, IdleGifTarget, cap, IdleGifMaxFps), ct);
+        await _serial.UploadIdleGifAsync(encoded, progress, ct);
+    }
+
+    public void ClearIdleGif() => _serial.ClearIdleGif();
 
     private SerialManager CreateAndStartSerial()
     {
@@ -119,6 +187,7 @@ public partial class MainViewModel : ObservableObject
         serial.KnobChanged += OnKnobChanged;
         serial.KnobDelta += OnKnobDelta;
         serial.KnobPressed += OnKnobPressed;
+        serial.SwitchChanged += OnSwitchChanged;
 
         try
         {
@@ -140,6 +209,7 @@ public partial class MainViewModel : ObservableObject
         _serial.KnobChanged -= OnKnobChanged;
         _serial.KnobDelta -= OnKnobDelta;
         _serial.KnobPressed -= OnKnobPressed;
+        _serial.SwitchChanged -= OnSwitchChanged;
         _serial.Stop();
         _serial = CreateAndStartSerial();
         _ = Task.Run(async () =>
@@ -158,13 +228,21 @@ public partial class MainViewModel : ObservableObject
 
     private void AddChannelInternal(string appName, int? knobIndex = null, bool save = true)
     {
-        var index = knobIndex ?? (Channels.Count == 0 ? 0 : Channels.Max(c => c.KnobIndex) + 1);
-        var ch = new ChannelViewModel(index, appName, _audioManager, AvailableSessions, Channels, RemoveChannelInternal, SaveChannels, HideSession, SyncChannel);
+        var index = knobIndex ?? FirstFreeKnobIndex();
+        var ch = new ChannelViewModel(index, appName, _audioManager, AvailableSessions, Channels, RemoveChannelInternal, SaveChannels, HideSession, SyncChannel, () => KnobCount);
         ch.IsSerialConnected = _serial.IsConnected;
         Channels.Add(ch);
 
         if (save)
             SaveChannels();
+    }
+
+    private int FirstFreeKnobIndex()
+    {
+        var used = Channels.Select(c => c.KnobIndex).ToHashSet();
+        var i = 0;
+        while (used.Contains(i)) i++;
+        return i;
     }
 
     private void RemoveChannelInternal(ChannelViewModel channel)
@@ -198,6 +276,11 @@ public partial class MainViewModel : ObservableObject
 
     private void SyncAllChannels()
     {
+        // The controller resets its idle timeout to a built-in default on boot, so
+        // push the configured value whenever we (re)sync after a connect.
+        _serial.SendIdleTimeout(IdleTimeoutSeconds * 1000);
+        _serial.SendShowPercent(ShowPercentSign);
+
         foreach (var ch in Channels)
             SyncChannel(ch);
     }
@@ -272,6 +355,13 @@ public partial class MainViewModel : ObservableObject
         SettingsService.Save(_settings);
     }
 
+    partial void OnIdleTimeoutSecondsChanged(int value)
+    {
+        _settings.IdleTimeoutSeconds = Math.Max(1, value);
+        SettingsService.Save(_settings);
+        _serial.SendIdleTimeout(_settings.IdleTimeoutSeconds * 1000);
+    }
+
     partial void OnNavPaneWidthChanged(double value)
     {
         _settings.NavPaneWidth = value;
@@ -303,11 +393,24 @@ public partial class MainViewModel : ObservableObject
         SettingsService.Save(_settings);
     }
 
+    partial void OnKnobCountChanged(int value)
+    {
+        _settings.KnobCount = value;
+        SettingsService.Save(_settings);
+    }
+
     partial void OnDebugSerialEventsChanged(bool value)
     {
         _settings.DebugSerialEvents = value;
         SettingsService.Save(_settings);
         if (!value) SerialLog.Clear();
+    }
+
+    partial void OnShowPercentSignChanged(bool value)
+    {
+        _settings.ShowPercentSign = value;
+        SettingsService.Save(_settings);
+        _serial?.SendShowPercent(value);
     }
 
     private void LogSerial(string message)
@@ -376,6 +479,15 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    private void OnSwitchChanged(int position)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            LogSerial($"switch → position {(position == 0 ? "A" : "B")}");
+            Output.ApplySwitchPosition(position);
+        });
+    }
+
     private void OnKnobPressed(string knobId)
     {
         if (ParseKnobIndex(knobId) is not int index)
@@ -392,6 +504,7 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
             channel.ToggleMuteCommand.Execute(null);
+            _serial?.SendMute(index, channel.IsMuted);
             LogSerial($"{knobId} → press | {channel.AppName} muted={channel.IsMuted}");
         });
     }

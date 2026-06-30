@@ -30,8 +30,16 @@ static const int NUM_ENCODERS = sizeof(encoders) / sizeof(encoders[0]);
 
 static volatile int     encDelta[NUM_ENCODERS] = {};
 static volatile uint8_t encState[NUM_ENCODERS] = {};
+static int              encResidual[NUM_ENCODERS] = {};
 static uint8_t          swLastState[NUM_ENCODERS];
 static unsigned long    swLastDebounce[NUM_ENCODERS];
+
+// Raw quadrature steps per physical detent. Common KY-040-style encoders emit a
+// full 2-step gray-code transition between detents (we interrupt on both CLK and
+// DT, CHANGE edge), so one click = 2 raw steps. Reporting every raw step made one
+// click apply the PC's volume step twice (e.g. 4% → 8%). Set to 1 if your encoder
+// is 1 step/detent, or 4 for a full 4-edge cycle per detent.
+static const int DETENT_DIV = 2;
 
 static const int8_t QEM[16] = {
    0, -1,  1,  0,
@@ -53,7 +61,10 @@ static void IRAM_ATTR readEncoders() {
 
 void knobsSetup(KnobCallback cb) {
   s_cb = cb;
-  Serial.begin(115200);
+  // Larger RX buffer so a base64 GIF-upload chunk (~5.5 KB) can't overrun the
+  // UART FIFO if loop() briefly stalls on a redraw. Must precede begin().
+  Serial.setRxBufferSize(16384);
+  Serial.begin(921600);
 
 #if USE_ENCODER
   for (int i = 0; i < NUM_ENCODERS; i++) {
@@ -79,17 +90,23 @@ void knobsLoop() {
     encDelta[i] = 0;
     interrupts();
 
+    // Collapse the raw quadrature steps into whole detents, carrying the leftover
+    // step so a click that straddles two loop iterations still counts once.
+    encResidual[i] += delta;
+    int detents = encResidual[i] / DETENT_DIV;
+    encResidual[i] -= detents * DETENT_DIV;
+
     // Encoders emit relative deltas, not an absolute level. We only report the
     // detents to the PC; the on-device gauge is driven by the authoritative
     // `vol:` echo the PC sends back (see handleVolumeLine in mixer.ino). Do NOT
     // call s_cb here — that feeds ±1.0 into displayShowKnob, which treats its
     // argument as an absolute 0..1 level and snaps the gauge to 0%/100%.
-    if (delta > 0) {
-      for (int d = 0; d < delta; d++) {
+    if (detents > 0) {
+      for (int d = 0; d < detents; d++) {
         Serial.print(encoders[i].id); Serial.println(":up");
       }
-    } else if (delta < 0) {
-      for (int d = 0; d > delta; d--) {
+    } else if (detents < 0) {
+      for (int d = 0; d > detents; d--) {
         Serial.print(encoders[i].id); Serial.println(":down");
       }
     }

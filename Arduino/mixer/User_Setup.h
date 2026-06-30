@@ -14,7 +14,10 @@
 #define TFT_RST    4   // RST  -> D4  (D12/GPIO12 is a strapping pin — avoid it)
 // BL (backlight) not defined — wire BL to 3.3V if screen stays dark
 
-#define SPI_FREQUENCY  40000000   // 40 MHz
+// 80 MHz roughly halves the per-frame push time, which is what makes idle-GIF
+// playback smooth. Most GC9A01 modules handle it; if the display shows noise or
+// glitches (long/loose wiring), drop back to 60000000 or 40000000.
+#define SPI_FREQUENCY  80000000   // 80 MHz
 
 // Fonts — required; without these drawString() renders nothing
 #define LOAD_GLCD    // Font 1: default 5x7 pixel font (used by setTextSize)

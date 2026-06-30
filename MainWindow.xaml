@@ -26,6 +26,11 @@
                         <SymbolIcon Symbol="Pictures" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Output" Tag="output">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7F5;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <Frame x:Name="ContentFrame" />

@@ -6,5 +6,7 @@
 // no icons, no sprites.
 void displaySetup();
 void displayShowKnob(int knobIndex, float value);
+void displayShowMute(int knobIndex, bool muted);
+void displaySetShowPercent(bool show);
 void displayEnterIdle();
 void displayTick();

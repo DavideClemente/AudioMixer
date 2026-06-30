@@ -18,16 +18,35 @@ public partial class ChannelViewModel : ObservableObject
     private readonly Action _onSettingsChanged;
     private readonly Func<AudioSession, string?> _onHideSession;
     private readonly Action<ChannelViewModel> _onSyncNeeded;
+    private readonly Func<int> _knobCount;
 
-    public int KnobIndex { get; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(KnobLabel))]
+    private int knobIndex;
 
     public string KnobLabel => $"Knob {KnobIndex + 1}";
 
     public ObservableCollection<AudioSession> AvailableSessions { get; }
 
+    /// <summary>Placeholder name for a channel that hasn't been assigned an app yet.</summary>
+    public const string UnassignedAppName = "Select App";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayName))]
+    [NotifyPropertyChangedFor(nameof(IsOffline))]
     private string appName;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOffline))]
+    private bool isAppRunning;
+
+    /// <summary>
+    /// True when the channel is assigned to a real app that isn't currently running.
+    /// Such a channel can't actually be controlled, so the UI dims it and flags it.
+    /// An unassigned ("Select App") placeholder is never considered offline.
+    /// </summary>
+    public bool IsOffline =>
+        !AppName.Equals(UnassignedAppName, StringComparison.OrdinalIgnoreCase) && !IsAppRunning;
 
     [ObservableProperty]
     private double volume;
@@ -52,9 +71,11 @@ public partial class ChannelViewModel : ObservableObject
         Action<ChannelViewModel> onRemove,
         Action onSettingsChanged,
         Func<AudioSession, string?> onHideSession,
-        Action<ChannelViewModel> onSyncNeeded)
+        Action<ChannelViewModel> onSyncNeeded,
+        Func<int> knobCount)
     {
-        KnobIndex = knobIndex;
+        this.knobIndex = knobIndex;
+        _knobCount = knobCount;
         _audioManager = audioManager;
         AvailableSessions = availableSessions;
         _channels = channels;
@@ -68,6 +89,16 @@ public partial class ChannelViewModel : ObservableObject
 
         AvailableSessions.CollectionChanged += OnAvailableSessionsChanged;
         IconSource = GetSessionIcon(appName);
+        UpdateRunningState();
+    }
+
+    private void UpdateRunningState() =>
+        IsAppRunning = AvailableSessions.Any(s => s.ProcessName.Equals(AppName, StringComparison.OrdinalIgnoreCase));
+
+    partial void OnKnobIndexChanged(int value)
+    {
+        _onSettingsChanged();
+        _onSyncNeeded(this);
     }
 
     partial void OnAppNameChanged(string value)
@@ -75,6 +106,7 @@ public partial class ChannelViewModel : ObservableObject
         Volume = _audioManager.GetVolume(value) * 100;
         IsMuted = _audioManager.GetMute(value);
         IconSource = GetSessionIcon(value);
+        UpdateRunningState();
         _onSettingsChanged();
         _onSyncNeeded(this);
     }
@@ -82,6 +114,7 @@ public partial class ChannelViewModel : ObservableObject
     private void OnAvailableSessionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         var session = AvailableSessions.FirstOrDefault(s => s.ProcessName.Equals(AppName, StringComparison.OrdinalIgnoreCase));
+        IsAppRunning = session is not null;
         if (session is null)
             return; // app not running — keep last-known icon and volume
 
@@ -107,11 +140,19 @@ public partial class ChannelViewModel : ObservableObject
 
     public IEnumerable<AudioSession> GetSelectableSessions()
     {
-        var takenByOthers = new HashSet<string>(
-            _channels.Where(c => c != this).Select(c => c.AppName),
+        var taken = new HashSet<string>(
+            _channels.Select(c => c.AppName),
             StringComparer.OrdinalIgnoreCase);
 
-        return AvailableSessions.Where(s => !takenByOthers.Contains(s.ProcessName));
+        return AvailableSessions.Where(s => !taken.Contains(s.ProcessName));
+    }
+
+    public IEnumerable<int> GetSelectableKnobIndices()
+    {
+        var taken = _channels.Where(c => c != this).Select(c => c.KnobIndex).ToHashSet();
+        // 0..count-1, plus this channel's own current index even if it sits above the count
+        return Enumerable.Range(0, Math.Max(_knobCount(), KnobIndex + 1))
+            .Where(i => !taken.Contains(i));
     }
 
     public static ChannelViewModel? FindAssignedChannel(IEnumerable<ChannelViewModel> channels, string processName) =>

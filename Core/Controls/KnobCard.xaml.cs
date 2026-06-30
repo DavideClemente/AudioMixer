@@ -41,6 +41,15 @@ public sealed partial class KnobCard : UserControl
     public Visibility ConvertDisconnectedToVisibility(bool isSerialConnected) =>
         isSerialConnected ? Visibility.Collapsed : Visibility.Visible;
 
+    public Visibility ConvertOfflineToVisibility(bool isOffline) =>
+        isOffline ? Visibility.Visible : Visibility.Collapsed;
+
+    // Dim the whole card when its app isn't running so it reads as inactive.
+    public double ConvertOfflineToOpacity(bool isOffline) => isOffline ? 0.45 : 1.0;
+
+    // The volume control does nothing while the app is closed, so disable it.
+    public bool ConvertOfflineToEnabled(bool isOffline) => !isOffline;
+
     public SolidColorBrush GetMuteBrush(bool isMuted) =>
         new SolidColorBrush(isMuted
             ? Color.FromArgb(255, 42, 8, 8)
@@ -59,9 +68,11 @@ public sealed partial class KnobCard : UserControl
         var dialog = new AppPickerDialog(Channel) { XamlRoot = XamlRoot };
         var result = await dialog.ShowAsync();
 
-        if (result == ContentDialogResult.Primary && dialog.SelectedSession is AudioSession session)
+        if (result == ContentDialogResult.Primary)
         {
-            Channel.AppName = session.ProcessName;
+            Channel.KnobIndex = dialog.SelectedKnobIndex;
+            if (dialog.SelectedSession is AudioSession session)
+                Channel.AppName = session.ProcessName;
         }
         else if (result == ContentDialogResult.Secondary)
         {

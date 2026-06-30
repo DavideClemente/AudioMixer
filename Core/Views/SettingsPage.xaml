@@ -55,6 +55,24 @@
                     HorizontalAlignment="Stretch" />
             </StackPanel>
 
+            <TextBlock Text="Number of knobs" Margin="0,12,0,0" />
+            <NumberBox
+                Value="{x:Bind ViewModel.KnobCount, Mode=TwoWay}"
+                Minimum="1"
+                Maximum="16"
+                SpinButtonPlacementMode="Inline"
+                HorizontalAlignment="Stretch" />
+
+            <TextBlock Text="Idle screen timeout (seconds)" Margin="0,12,0,0" />
+            <TextBlock Text="How long with no knob activity before the controller shows its idle screen"
+                       Foreground="#808080" FontSize="12" Margin="0,-4,0,0" TextWrapping="Wrap" />
+            <NumberBox
+                Value="{x:Bind ViewModel.IdleTimeoutSeconds, Mode=TwoWay}"
+                Minimum="1"
+                Maximum="3600"
+                SpinButtonPlacementMode="Inline"
+                HorizontalAlignment="Stretch" />
+
             <Button Content="Reconnect" Command="{x:Bind ViewModel.ReconnectCommand}"
                     Margin="0,16,0,0" BorderThickness="1" CornerRadius="8">
                 <Button.Resources>
@@ -73,9 +91,14 @@
             <TextBlock Text="{x:Bind ViewModel.SerialStatus, Mode=OneWay}" Opacity="0.7" Margin="0,8,0,0" />
 
             <ToggleSwitch
+                Header="Show % sign on device"
+                IsOn="{x:Bind ViewModel.ShowPercentSign, Mode=TwoWay}"
+                Margin="0,16,0,0" />
+
+            <ToggleSwitch
                 Header="Debug serial events"
                 IsOn="{x:Bind ViewModel.DebugSerialEvents, Mode=TwoWay}"
-                Margin="0,16,0,0" />
+                Margin="0,8,0,0" />
 
             <ListView
                 Visibility="{x:Bind ViewModel.DebugSerialEvents, Mode=OneWay}"

@@ -18,23 +18,18 @@ static const int SCR_W = 128;
 static const int SCR_H = 64;
 
 // ── Animation timing ──────────────────────────────────────────────────────────
-static const unsigned long ANIM_DT = 33;   // ~30 fps active animation step
 static const unsigned long IDLE_DT = 50;    // ~20 fps idle frame step
 
 // ── State ─────────────────────────────────────────────────────────────────────
 enum Mode { ACTIVE, IDLE_MODE };
 static Mode  mode       = IDLE_MODE;
 static int   activeKnob = -1;
-static float targetVol  = 0.0f;
 static float shownVol   = 0.0f;
+static bool  isMuted     = false;
+static bool  showPercent = false;
 
-// Last shown volume per knob (-1 = never shown). Lets the gauge resume where it
-// left off when a knob re-activates from idle, instead of sweeping up from 0.
-static float lastKnobVol[MAX_KNOBS];
-
-static unsigned long lastAnimMs = 0;
 static unsigned long lastIdleMs = 0;
-static bool          activeDirty = true;   // force one active redraw on (re)activation
+static bool          activeDirty = true;   // redraw the active screen on next tick
 
 // ── Active screen ───────────────────────────────────────────────────────────────
 
@@ -44,22 +39,43 @@ static void drawCentered(const char* s, int y) {
 }
 
 static void renderActive() {
-  // App name (top), centered. Falls back to "---" before the PC assigns a label.
   const char* label = (activeKnob >= 0 && activeKnob < MAX_KNOBS && knobLabel[activeKnob][0])
                       ? knobLabel[activeKnob] : "---";
 
-  // Big percentage, centered. logisoso24 "tn" carries digits only, so the '%'
-  // is drawn separately in the small font right after the number.
+  const int bx = 6, by = 54, bw = SCR_W - 12, bh = 8;
+
+  if (isMuted) {
+    u8g2.firstPage();
+    do {
+      u8g2.setFont(u8g2_font_6x12_tr);
+      drawCentered(label, 12);
+
+      // 🔇-style icon using primitives, centered in the number area (y=24–44).
+      // Speaker body: 8×16 rect at (52,24). Cone: triangle to the left.
+      // Mute X: two crossed lines to the right of the body.
+      // U8g2 fills in page-buffer mode so we draw inside firstPage/nextPage.
+      u8g2.drawBox(52, 24, 8, 16);                       // speaker body
+      u8g2.drawTriangle(52,24, 52,40, 44,32);            // cone
+      u8g2.drawLine(64, 24, 74, 40);                     // X line 1
+      u8g2.drawLine(65, 24, 75, 40);
+      u8g2.drawLine(74, 24, 64, 40);                     // X line 2
+      u8g2.drawLine(75, 24, 65, 40);
+
+      u8g2.drawFrame(bx, by, bw, bh);
+    } while (u8g2.nextPage());
+    return;
+  }
+
   int pct = (int)(shownVol * 100.0f + 0.5f);
   char num[5];
   snprintf(num, sizeof(num), "%d", pct);
 
-  // Pre-compute the number layout once (font metrics are stable across pages).
   u8g2.setFont(u8g2_font_logisoso24_tn);
   int numW = u8g2.getStrWidth(num);
-  int startX = (SCR_W - (numW + 2 + 6)) / 2;   // 6 ≈ '%' width in 6x12 font
+  // Reserve space for '%' only when it will be drawn
+  int pctW = showPercent ? (2 + 6) : 0;   // 6 ≈ '%' width in 6x12 font
+  int startX = (SCR_W - (numW + pctW)) / 2;
 
-  const int bx = 6, by = 54, bw = SCR_W - 12, bh = 8;
   int fill = (int)((bw - 2) * shownVol + 0.5f);
 
   u8g2.firstPage();
@@ -68,20 +84,15 @@ static void renderActive() {
     drawCentered(label, 12);
 
     u8g2.setFont(u8g2_font_logisoso24_tn);
-    u8g2.drawStr(startX, 44, num);            // baseline at y=44
-    u8g2.setFont(u8g2_font_6x12_tr);
-    u8g2.drawStr(startX + numW + 2, 44, "%"); // sit on the same baseline
+    u8g2.drawStr(startX, 44, num);
+    if (showPercent) {
+      u8g2.setFont(u8g2_font_6x12_tr);
+      u8g2.drawStr(startX + numW + 2, 44, "%");
+    }
 
     u8g2.drawFrame(bx, by, bw, bh);
     if (fill > 0) u8g2.drawBox(bx + 1, by + 1, fill, bh - 2);
   } while (u8g2.nextPage());
-}
-
-static void animateActive() {
-  // Ease shownVol toward targetVol
-  shownVol += (targetVol - shownVol) * 0.15f;
-  if (fabs(targetVol - shownVol) < 0.005f) shownVol = targetVol;
-  renderActive();
 }
 
 // ── Idle screen ─────────────────────────────────────────────────────────────────
@@ -109,23 +120,34 @@ static void renderIdle(unsigned long now) {
 void displaySetup() {
   u8g2.begin();
   u8g2.setBusClock(400000);   // 400 kHz I2C so a full 1 KB frame pushes fast enough
-  for (int i = 0; i < MAX_KNOBS; i++) lastKnobVol[i] = -1.0f;
   mode = IDLE_MODE;
 }
 
 void displayShowKnob(int knobIndex, float value) {
   if (knobIndex < 0 || knobIndex >= MAX_KNOBS) return;
   value = constrain(value, 0.0f, 1.0f);
-  if (mode != ACTIVE || knobIndex != activeKnob) {
+  mode = ACTIVE;
+  // Snap straight to the new value instead of easing through every intermediate
+  // number — the displayed percentage jumps directly to the current volume.
+  // Redraw whenever the active knob or its value changes.
+  if (knobIndex != activeKnob || value != shownVol) {
     activeKnob  = knobIndex;
+    shownVol    = value;
     activeDirty = true;
-    // Resume from this knob's last shown level so the gauge eases the short
-    // distance to the new value instead of sweeping up from 0.
-    shownVol = (lastKnobVol[knobIndex] >= 0.0f) ? lastKnobVol[knobIndex] : value;
   }
-  mode      = ACTIVE;
-  targetVol = value;
-  lastKnobVol[knobIndex] = value;
+}
+
+void displaySetShowPercent(bool show) {
+  showPercent = show;
+  activeDirty = true;
+}
+
+void displayShowMute(int knobIndex, bool muted) {
+  if (knobIndex < 0 || knobIndex >= MAX_KNOBS) return;
+  mode        = ACTIVE;
+  activeKnob  = knobIndex;
+  isMuted     = muted;
+  activeDirty = true;
 }
 
 void displayEnterIdle() {
@@ -139,12 +161,6 @@ void displayTick() {
     if (activeDirty) {
       renderActive();
       activeDirty = false;
-      lastAnimMs = now;
-      return;
-    }
-    if (now - lastAnimMs >= ANIM_DT && shownVol != targetVol) {
-      lastAnimMs = now;
-      animateActive();
     }
   } else { // IDLE_MODE
     if (now - lastIdleMs >= IDLE_DT) {

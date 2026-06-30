@@ -18,7 +18,7 @@
             <SolidColorBrush Color="#282828"/>
         </Border.BorderBrush>
 
-        <Grid>
+        <Grid Opacity="{x:Bind ConvertOfflineToOpacity(Channel.IsOffline), Mode=OneWay}">
 
             <!-- Top white shimmer line -->
             <Border VerticalAlignment="Top" Height="1" CornerRadius="18,18,0,0">
@@ -86,6 +86,15 @@
                                         FontFamily="Cascadia Code, Consolas"
                                         Foreground="#B89530"/>
                                 </Border>
+                                <Border Background="#1A1414" CornerRadius="4" Padding="5,2"
+                                        Visibility="{x:Bind ConvertOfflineToVisibility(Channel.IsOffline), Mode=OneWay}"
+                                        ToolTipService.ToolTip="App isn't running — its volume can't be controlled until it's launched">
+                                    <TextBlock
+                                        Text="● not running"
+                                        FontSize="9"
+                                        FontFamily="Cascadia Code, Consolas"
+                                        Foreground="#C06060"/>
+                                </Border>
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>
@@ -116,6 +125,7 @@
                     Minimum="0"
                     Maximum="100"
                     Margin="0,22,0,0"
+                    IsEnabled="{x:Bind ConvertOfflineToEnabled(Channel.IsOffline), Mode=OneWay}"
                     Opacity="{x:Bind ConvertMuteToOpacity(Channel.IsMuted), Mode=OneWay}">
                     <Slider.Resources>
                         <SolidColorBrush x:Key="SliderTrackFill" Color="#1C1C1C"/>

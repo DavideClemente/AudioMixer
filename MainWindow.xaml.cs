@@ -46,6 +46,7 @@ namespace AudioMixerWin
 
         private readonly MainPage _mainPage;
         private readonly SettingsPage _settingsPage;
+        private readonly OutputPage _outputPage;
         private IdleScreenPage _idleScreenPage = null!;
         private readonly AppWindow _appWindow;
         private readonly TaskbarIcon _trayIcon;
@@ -84,6 +85,7 @@ namespace AudioMixerWin
 
             _mainPage = new MainPage(ViewModel);
             _settingsPage = new SettingsPage(ViewModel);
+            _outputPage = new OutputPage(ViewModel.Output);
             ViewModel.InitIdleScreen(PickGifFilesAsync, () => Content?.XamlRoot);
             _idleScreenPage = new IdleScreenPage(ViewModel.IdleScreen!);
 
@@ -180,7 +182,12 @@ namespace AudioMixerWin
             }
 
             var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
-            ContentFrame.Content = tag == "idle" ? _idleScreenPage : _mainPage;
+            ContentFrame.Content = tag switch
+            {
+                "idle" => _idleScreenPage,
+                "output" => _outputPage,
+                _ => _mainPage,
+            };
         }
 
         private async Task<IReadOnlyList<StorageFile>> PickGifFilesAsync()
